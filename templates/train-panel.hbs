@@ -1,0 +1,470 @@
+<div class="dt-root {{#unless isGM}}dt-player{{/unless}}">
+  <header class="dt-header">
+    <div class="dt-title">
+      <span class="dt-title-mark"><i class="fa-solid fa-train"></i></span>
+      <div>
+        <h1>SWADE Dominion Train</h1>
+        <p>{{route.currentRouteName}} / {{route.destinationName}}</p>
+      </div>
+    </div>
+
+    <div class="dt-resource-strip">
+      {{#each resources}}
+        <div class="dt-resource dt-resource-{{key}} dt-status-{{status}}">
+          <i class="fa-solid {{icon}}"></i>
+          <span>{{label}}</span>
+          <strong>{{display}}</strong>
+        </div>
+      {{/each}}
+    </div>
+  </header>
+
+  <div class="dt-shell">
+    <nav class="dt-sidebar" aria-label="Dominion train sections">
+      {{#each tabs}}
+        <button type="button" class="dt-nav-item {{#if active}}active{{/if}}" data-tab="{{id}}" title="{{label}}">
+          <i class="fa-solid {{icon}}"></i>
+          <span>{{label}}</span>
+        </button>
+      {{/each}}
+    </nav>
+
+    <main class="dt-main">
+      {{#if warnings.length}}
+        <section class="dt-warning-band">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <div>
+            {{#each warnings}}
+              <p>{{this}}</p>
+            {{/each}}
+          </div>
+        </section>
+      {{/if}}
+
+      {{#if (eq activeTab "dashboard")}}
+        <section class="dt-pane dt-dashboard">
+          <div class="dt-command-row">
+            <div>
+              <h2>Train Console</h2>
+              <p>Turn {{summary.currentTurn}} / {{route.movementLabel}}</p>
+            </div>
+            {{#if isGM}}
+              <button type="button" class="dt-primary" data-advance-turn title="Advance Turn">
+                <i class="fa-solid fa-forward-step"></i>
+                <span>Advance Turn</span>
+              </button>
+            {{else}}
+              <span class="dt-readonly"><i class="fa-solid fa-eye"></i> Read Only</span>
+            {{/if}}
+          </div>
+
+          <div class="dt-metrics-grid">
+            <div class="dt-metric">
+              <span>Current Route</span>
+              <strong>{{route.currentRouteName}}</strong>
+            </div>
+            <div class="dt-metric">
+              <span>Destination</span>
+              <strong>{{route.destinationName}}</strong>
+            </div>
+            <div class="dt-metric">
+              <span>Remaining Turns</span>
+              <strong>{{route.remainingDisplay}}</strong>
+            </div>
+            <div class="dt-metric">
+              <span>Active Wagons</span>
+              <strong>{{summary.activeWagonsDisplay}}</strong>
+            </div>
+            <div class="dt-metric {{#if summary.overCapacityVisible}}dt-danger{{/if}}">
+              <span>Population</span>
+              <strong>{{summary.populationCapacityDisplay}}</strong>
+            </div>
+            <div class="dt-metric">
+              <span>Fuel Next Turn</span>
+              <strong>{{summary.fuelCostDisplay}}</strong>
+            </div>
+            <div class="dt-metric">
+              <span>Food Next Turn</span>
+              <strong>{{summary.foodCostDisplay}}</strong>
+            </div>
+            <div class="dt-metric">
+              <span>Water Next Turn</span>
+              <strong>{{summary.waterCostDisplay}}</strong>
+            </div>
+            <div class="dt-metric">
+              <span>Amenities Next Turn</span>
+              <strong>{{summary.amenitiesCostDisplay}}</strong>
+            </div>
+          </div>
+
+          {{#if isGM}}
+            <form class="dt-panel dt-resource-form" data-resource-form>
+              <div class="dt-panel-heading">
+                <h2>Resources</h2>
+                <button type="submit" title="Save Resources"><i class="fa-solid fa-floppy-disk"></i></button>
+              </div>
+              <div class="dt-form-grid dt-resource-edit-grid">
+                {{#each resources}}
+                  <label>
+                    <span>{{label}}</span>
+                    <input type="number" step="0.01" name="{{key}}" value="{{rawValue}}">
+                  </label>
+                {{/each}}
+              </div>
+            </form>
+          {{/if}}
+        </section>
+      {{/if}}
+
+      {{#if (eq activeTab "wagons")}}
+        <section class="dt-pane">
+          <div class="dt-command-row">
+            <div>
+              <h2>Wagons</h2>
+              <p>{{summary.activeWagons}} active / capacity {{summary.capacity}}</p>
+            </div>
+            {{#if isGM}}
+              <button type="button" data-add-wagon title="Add Wagon">
+                <i class="fa-solid fa-plus"></i>
+                <span>Add Wagon</span>
+              </button>
+            {{/if}}
+          </div>
+
+          <div class="dt-record-list">
+            {{#each wagons}}
+              <form class="dt-record" data-wagon-form="{{id}}">
+                <div class="dt-record-head">
+                  <label class="dt-record-title">
+                    <span>Name</span>
+                    <input type="text" name="name" value="{{name}}" {{#unless @root.isGM}}disabled{{/unless}}>
+                  </label>
+                  <label class="dt-toggle">
+                    <input type="checkbox" name="active" {{checked active}} {{#unless @root.isGM}}disabled{{/unless}}>
+                    <span>Active</span>
+                  </label>
+                </div>
+                <div class="dt-form-grid">
+                  <label>
+                    <span>Type</span>
+                    <input type="text" name="type" value="{{type}}" list="dt-wagon-types" {{#unless @root.isGM}}disabled{{/unless}}>
+                  </label>
+                  <label>
+                    <span>Population Capacity</span>
+                    <input type="number" step="1" min="0" name="capacity" value="{{capacity}}" {{#unless @root.isGM}}disabled{{/unless}}>
+                  </label>
+                </div>
+                <label class="dt-wide">
+                  <span>Notes</span>
+                  <textarea name="notes" rows="2" {{#unless @root.isGM}}disabled{{/unless}}>{{notes}}</textarea>
+                </label>
+                {{#if @root.isGM}}
+                  <label class="dt-wide">
+                    <span>GM Notes</span>
+                    <textarea name="gmNotes" rows="2">{{gmNotes}}</textarea>
+                  </label>
+                  <div class="dt-record-actions">
+                    <button type="submit" title="Save Wagon"><i class="fa-solid fa-floppy-disk"></i><span>Save</span></button>
+                    <button type="button" class="dt-danger-button" data-delete-wagon="{{id}}" title="Delete Wagon"><i class="fa-solid fa-trash-can"></i></button>
+                  </div>
+                {{/if}}
+              </form>
+            {{/each}}
+          </div>
+        </section>
+      {{/if}}
+
+      {{#if (eq activeTab "people")}}
+        <section class="dt-pane">
+          <div class="dt-command-row">
+            <div>
+              <h2>People</h2>
+              <p>{{summary.population}} passengers and crew</p>
+            </div>
+            {{#if isGM}}
+              <button type="button" data-add-group title="Add Group">
+                <i class="fa-solid fa-plus"></i>
+                <span>Add Group</span>
+              </button>
+            {{/if}}
+          </div>
+
+          <div class="dt-record-list">
+            {{#each groups}}
+              <form class="dt-record" data-group-form="{{id}}">
+                <div class="dt-record-head">
+                  <label class="dt-record-title">
+                    <span>Group Name</span>
+                    <input type="text" name="name" value="{{name}}" {{#unless @root.isGM}}disabled{{/unless}}>
+                  </label>
+                  <label>
+                    <span>Count</span>
+                    <input type="number" step="1" min="0" name="count" value="{{count}}" {{#unless @root.isGM}}disabled{{/unless}}>
+                  </label>
+                </div>
+                <div class="dt-form-grid">
+                  <label>
+                    <span>Assigned Wagon</span>
+                    <select name="assignedWagon" {{#unless @root.isGM}}disabled{{/unless}}>
+                      <option value="">Unassigned</option>
+                      {{#each @root.wagonOptions}}
+                        <option value="{{id}}" {{selected ../assignedWagon id}}>{{name}}</option>
+                      {{/each}}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Food / Person</span>
+                    <input type="number" step="0.01" min="0" name="foodPerTurn" value="{{foodPerTurn}}" {{#unless @root.isGM}}disabled{{/unless}}>
+                  </label>
+                  <label>
+                    <span>Water / Person</span>
+                    <input type="number" step="0.01" min="0" name="waterPerTurn" value="{{waterPerTurn}}" {{#unless @root.isGM}}disabled{{/unless}}>
+                  </label>
+                  <label>
+                    <span>Amenities / Person</span>
+                    <input type="number" step="0.01" min="0" name="amenitiesPerTurn" value="{{amenitiesPerTurn}}" {{#unless @root.isGM}}disabled{{/unless}}>
+                  </label>
+                </div>
+                <label class="dt-wide">
+                  <span>Notes</span>
+                  <textarea name="notes" rows="2" {{#unless @root.isGM}}disabled{{/unless}}>{{notes}}</textarea>
+                </label>
+                {{#if @root.isGM}}
+                  <label class="dt-wide">
+                    <span>GM Notes</span>
+                    <textarea name="gmNotes" rows="2">{{gmNotes}}</textarea>
+                  </label>
+                  <div class="dt-record-actions">
+                    <button type="submit" title="Save Group"><i class="fa-solid fa-floppy-disk"></i><span>Save</span></button>
+                    <button type="button" class="dt-danger-button" data-delete-group="{{id}}" title="Delete Group"><i class="fa-solid fa-trash-can"></i></button>
+                  </div>
+                {{/if}}
+              </form>
+            {{/each}}
+          </div>
+        </section>
+      {{/if}}
+
+      {{#if (eq activeTab "markets")}}
+        <section class="dt-pane">
+          <div class="dt-command-row">
+            <div>
+              <h2>Local Markets</h2>
+              <p>{{selectedMarket.location}}</p>
+            </div>
+            {{#if isGM}}
+              <button type="button" data-add-market title="Add Market">
+                <i class="fa-solid fa-plus"></i>
+                <span>Add Market</span>
+              </button>
+            {{/if}}
+          </div>
+
+          <div class="dt-market-tabs">
+            {{#each markets}}
+              <button type="button" class="{{#if active}}active{{/if}}" data-select-market="{{id}}" title="{{name}}">
+                <i class="fa-solid fa-store"></i>
+                <span>{{name}}</span>
+              </button>
+            {{/each}}
+          </div>
+
+          {{#if selectedMarket}}
+            <form class="dt-panel" data-market-form="{{selectedMarket.id}}">
+              <div class="dt-panel-heading">
+                <h2>Market Ledger</h2>
+                {{#if isGM}}
+                  <div class="dt-inline-actions">
+                    <button type="submit" title="Save Market"><i class="fa-solid fa-floppy-disk"></i></button>
+                    <button type="button" class="dt-danger-button" data-delete-market="{{selectedMarket.id}}" title="Delete Market"><i class="fa-solid fa-trash-can"></i></button>
+                  </div>
+                {{/if}}
+              </div>
+              <div class="dt-form-grid">
+                <label>
+                  <span>Name</span>
+                  <input type="text" name="name" value="{{selectedMarket.name}}" {{#unless isGM}}disabled{{/unless}}>
+                </label>
+                <label>
+                  <span>Location</span>
+                  <input type="text" name="location" value="{{selectedMarket.location}}" {{#unless isGM}}disabled{{/unless}}>
+                </label>
+              </div>
+              <label class="dt-wide">
+                <span>Notes</span>
+                <textarea name="notes" rows="2" {{#unless isGM}}disabled{{/unless}}>{{selectedMarket.notes}}</textarea>
+              </label>
+            </form>
+
+            <div class="dt-command-row dt-sub-row">
+              <div>
+                <h2>Supply Lots</h2>
+                <p>{{selectedMarket.items.length}} entries</p>
+              </div>
+              {{#if isGM}}
+                <button type="button" data-add-market-item="{{selectedMarket.id}}" title="Add Market Item">
+                  <i class="fa-solid fa-plus"></i>
+                  <span>Add Item</span>
+                </button>
+              {{/if}}
+            </div>
+
+            <div class="dt-record-list">
+              {{#each selectedMarket.items}}
+                <form class="dt-record dt-market-item" data-market-item-form="{{id}}" data-market-item-market="{{../id}}">
+                  <div class="dt-record-head">
+                    <label class="dt-record-title">
+                      <span>Item Name</span>
+                      <input type="text" name="name" value="{{name}}" {{#unless @root.isGM}}disabled{{/unless}}>
+                    </label>
+                    <label>
+                      <span>Stock</span>
+                      <input type="number" step="1" min="0" name="stock" value="{{stock}}" {{#unless @root.isGM}}disabled{{/unless}}>
+                    </label>
+                  </div>
+                  <div class="dt-form-grid">
+                    <label>
+                      <span>Cost in Talion</span>
+                      <input type="number" step="0.01" min="0" name="cost" value="{{cost}}" {{#unless @root.isGM}}disabled{{/unless}}>
+                    </label>
+                    <label>
+                      <span>Resource Given</span>
+                      <select name="resourceType" {{#unless @root.isGM}}disabled{{/unless}}>
+                        {{#each @root.resourcePurchaseOptions}}
+                          <option value="{{key}}" {{selected ../resourceType key}}>{{label}}</option>
+                        {{/each}}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Amount Given</span>
+                      <input type="number" step="0.01" min="0" name="amount" value="{{amount}}" {{#unless @root.isGM}}disabled{{/unless}}>
+                    </label>
+                  </div>
+                  <label class="dt-wide">
+                    <span>Description</span>
+                    <textarea name="description" rows="2" {{#unless @root.isGM}}disabled{{/unless}}>{{description}}</textarea>
+                  </label>
+                  {{#if @root.isGM}}
+                    <div class="dt-record-actions">
+                      <button type="submit" title="Save Item"><i class="fa-solid fa-floppy-disk"></i><span>Save</span></button>
+                      <button type="button" data-buy-market-item="{{id}}" data-buy-market="{{../id}}" title="Buy Item"><i class="fa-solid fa-cart-shopping"></i><span>Buy</span></button>
+                      <button type="button" class="dt-danger-button" data-delete-market-item="{{id}}" data-delete-market="{{../id}}" title="Delete Item"><i class="fa-solid fa-trash-can"></i></button>
+                    </div>
+                  {{/if}}
+                </form>
+              {{else}}
+                <p class="dt-empty">No supply lots.</p>
+              {{/each}}
+            </div>
+          {{/if}}
+        </section>
+      {{/if}}
+
+      {{#if (eq activeTab "route")}}
+        <section class="dt-pane">
+          <div class="dt-command-row">
+            <div>
+              <h2>Route</h2>
+              <p>{{route.movementLabel}} / {{route.remainingDisplay}} turns</p>
+            </div>
+          </div>
+
+          <form class="dt-panel" data-route-form>
+            <div class="dt-form-grid">
+              <label>
+                <span>Current Route</span>
+                <input type="text" name="currentRouteName" value="{{route.currentRouteName}}" {{#unless isGM}}disabled{{/unless}}>
+              </label>
+              <label>
+                <span>Destination</span>
+                <input type="text" name="destinationName" value="{{route.destinationName}}" {{#unless isGM}}disabled{{/unless}}>
+              </label>
+              <label>
+                <span>Remaining Turns</span>
+                <input type="number" step="1" min="0" name="remainingTurns" value="{{route.remainingInput}}" {{#unless isGM}}disabled{{/unless}}>
+              </label>
+              <label class="dt-toggle dt-form-toggle">
+                <input type="checkbox" name="moving" {{checked route.moving}} {{#unless isGM}}disabled{{/unless}}>
+                <span>Moving</span>
+              </label>
+            </div>
+            <label class="dt-wide">
+              <span>Notes</span>
+              <textarea name="notes" rows="5" {{#unless isGM}}disabled{{/unless}}>{{route.notes}}</textarea>
+            </label>
+            {{#if isGM}}
+              <div class="dt-record-actions">
+                <button type="submit" title="Save Route"><i class="fa-solid fa-floppy-disk"></i><span>Save Route</span></button>
+              </div>
+            {{/if}}
+          </form>
+        </section>
+      {{/if}}
+
+      {{#if (eq activeTab "settings")}}
+        <section class="dt-pane">
+          <div class="dt-command-row">
+            <div>
+              <h2>Settings</h2>
+              <p>Fuel, permissions, and chat output</p>
+            </div>
+          </div>
+
+          <form class="dt-panel" data-settings-form>
+            <div class="dt-settings-grid">
+              <label>
+                <span>Base Fuel / Turn</span>
+                <input type="number" step="0.01" min="0" name="baseFuelPerTurn" value="{{settings.baseFuelPerTurn}}">
+              </label>
+              <label>
+                <span>Fuel Multiplier / Wagon</span>
+                <input type="number" step="0.01" min="0" name="fuelMultiplierPerWagon" value="{{settings.fuelMultiplierPerWagon}}">
+              </label>
+              <label>
+                <span>Default Food / Person</span>
+                <input type="number" step="0.01" min="0" name="defaultFoodPerPerson" value="{{settings.defaultFoodPerPerson}}">
+              </label>
+              <label>
+                <span>Default Water / Person</span>
+                <input type="number" step="0.01" min="0" name="defaultWaterPerPerson" value="{{settings.defaultWaterPerPerson}}">
+              </label>
+              <label>
+                <span>Default Amenities / Person</span>
+                <input type="number" step="0.01" min="0" name="defaultAmenitiesPerPerson" value="{{settings.defaultAmenitiesPerPerson}}">
+              </label>
+              <label>
+                <span>Chat Output Mode</span>
+                <select name="chatOutputMode">
+                  {{#each chatModeOptions}}
+                    <option value="{{value}}" {{selected @root.settings.chatOutputMode value}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+            </div>
+
+            <div class="dt-check-grid">
+              <label><input type="checkbox" name="allowNegativeResources" {{checked settings.allowNegativeResources}}> <span>Allow negative resources</span></label>
+              <label><input type="checkbox" name="consumeFuelWhileStopped" {{checked settings.consumeFuelWhileStopped}}> <span>Consume fuel while stopped</span></label>
+              <label><input type="checkbox" name="playersCanOpenPanel" {{checked settings.playersCanOpenPanel}}> <span>Players can open panel</span></label>
+              <label><input type="checkbox" name="showTalionToPlayers" {{checked settings.showTalionToPlayers}}> <span>Show Talion to players</span></label>
+              <label><input type="checkbox" name="playersSeeExactResources" {{checked settings.playersSeeExactResources}}> <span>Players see exact resources</span></label>
+              <label><input type="checkbox" name="playersSeeWagonList" {{checked settings.playersSeeWagonList}}> <span>Players see wagon list</span></label>
+              <label><input type="checkbox" name="playersSeePassengerGroups" {{checked settings.playersSeePassengerGroups}}> <span>Players see passenger groups</span></label>
+              <label><input type="checkbox" name="playersSeeRouteProgress" {{checked settings.playersSeeRouteProgress}}> <span>Players see route progress</span></label>
+            </div>
+
+            <div class="dt-record-actions">
+              <button type="submit" title="Save Settings"><i class="fa-solid fa-floppy-disk"></i><span>Save Settings</span></button>
+            </div>
+          </form>
+        </section>
+      {{/if}}
+    </main>
+  </div>
+
+  <datalist id="dt-wagon-types">
+    {{#each wagonTypeSuggestions}}
+      <option value="{{this}}"></option>
+    {{/each}}
+  </datalist>
+</div>
