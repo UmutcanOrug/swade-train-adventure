@@ -10,6 +10,11 @@ const RADIO_MAX_FREQUENCY = 120;
 const RADIO_FREQUENCY_STEP = 0.1;
 const RADIO_DEFAULT_FREQUENCY = 100;
 const RADIO_DIAL_SWEEP_DEGREES = 280;
+const RADIO_GAIN_MIN = 1;
+const RADIO_GAIN_MAX = 5;
+const RADIO_GAIN_STEP = 0.01;
+const RADIO_DEFAULT_GAIN = 3;
+const RADIO_DEFAULT_GAIN_TOLERANCE = 0.05;
 const RADIO_SIGNAL_FEATHER_RANGE = 2.5;
 const RADIO_DEFAULT_STABILIZATION_SECONDS = 3;
 const RADIO_DEFAULT_AUDIO = {
@@ -21,6 +26,7 @@ const RADIO_LOG_LIMIT = 50;
 const RADIO_REQUEST_LIMIT = 20;
 const PLAYER_RADIO_ACTIONS = new Set([
   "tuneRadio",
+  "adjustRadioGain",
   "requestRadioLock",
   "performRadioLock",
   "transmitRadioResponse"
@@ -113,17 +119,22 @@ let trainApp = null;
 let refreshTimer = null;
 const pendingActionRequests = new Map();
 let liveRadioFrequency = null;
+let liveRadioGain = null;
 let liveRadioTunedBy = "";
 let liveRadioStamp = 0;
 let radioBroadcastTimer = null;
 let queuedRadioFrequency = null;
 let radioTuneCommitTimer = null;
+let radioGainBroadcastTimer = null;
+let queuedRadioGain = null;
+let radioGainCommitTimer = null;
 const radioAmbientTracks = new Map();
-const radioOneShotAudio = new Set();
+const radioOneShotAudio = new Map();
 let radioStabilityTimer = null;
 let radioStabilityState = {
   broadcastId: "",
   frequency: null,
+  gain: null,
   startedAt: 0,
   ready: false
 };
@@ -502,8 +513,9 @@ function huntingLogContext(entry) {
 
 function radioContext(data, isGM) {
   const frequency = normalizeRadioFrequency(liveRadioFrequency ?? data.radio.frequency);
+  const gain = normalizeRadioGain(liveRadioGain ?? data.radio.gain);
   const poweredOn = data.radio.poweredOn !== false;
-  const signal = poweredOn ? radioSignalAtFrequency(data, frequency) : null;
+  const signal = poweredOn ? radioSignalAtFrequency(data, frequency, gain) : null;
   const presentation = poweredOn ? radioSignalPresentation(signal) : radioPoweredOffPresentation();
   const permission = Boolean(data.radio.permissions?.[game.user?.id]);
   const requestPending = data.radio.requests.some(request => request.userId === game.user?.id);
@@ -516,6 +528,11 @@ function radioContext(data, isGM) {
     minFrequency: RADIO_MIN_FREQUENCY,
     maxFrequency: RADIO_MAX_FREQUENCY,
     frequencyStep: RADIO_FREQUENCY_STEP,
+    gain: formatRadioGain(gain),
+    gainRaw: gain,
+    gainMin: RADIO_GAIN_MIN,
+    gainMax: RADIO_GAIN_MAX,
+    gainStep: RADIO_GAIN_STEP,
     tunedBy: liveRadioTunedBy || data.radio.lastTunedBy || "No operator",
     canLock: isGM || permission,
     requestPending,
@@ -530,14 +547,26 @@ function radioContext(data, isGM) {
 }
 
 function radioActorOptions(isGM) {
+  const playerCharacterIds = new Set(
+    users()
+      .filter(user => !user.isGM)
+      .map(user => cleanString(user.character?.id || user.character))
+      .filter(Boolean)
+  );
   return (game.actors?.contents || Array.from(game.actors || []))
     .filter(actor => isGM || actor.isOwner)
     .map(actor => ({
       id: actor.id,
       name: actor.name || "Unnamed Actor",
-      img: actor.img || ""
+      img: actor.img || "",
+      isPlayerCharacter: playerCharacterIds.has(actor.id),
+      isPlayerOwned: Boolean(actor.hasPlayerOwner)
     }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort((a, b) => (
+      Number(b.isPlayerCharacter) - Number(a.isPlayerCharacter)
+      || Number(b.isPlayerOwned) - Number(a.isPlayerOwned)
+      || a.name.localeCompare(b.name)
+    ));
 }
 
 function radioUserContexts(data) {
@@ -565,8 +594,10 @@ function radioBroadcastContext(broadcast) {
   return {
     ...broadcast,
     frequencyDisplay: formatRadioFrequency(broadcast.frequency),
+    targetGainDisplay: formatRadioGain(broadcast.targetGain),
+    gainToleranceDisplay: formatRadioGainTolerance(broadcast.gainTolerance),
+    modifierDisplay: String(Math.trunc(toSignedNumber(broadcast.modifier, 0))),
     expanded: uiState.expandedRadioBroadcastId === broadcast.id,
-    dieOptions: HUNTING_DIE_OPTIONS.map(sides => ({ sides, selected: sides === broadcast.fallbackDie })),
     responseLines: serializeRadioResponses(broadcast.responses)
   };
 }
@@ -967,11 +998,14 @@ function activateRadioListeners(root) {
   const receiver = root.querySelector("[data-radio-receiver]");
   if (receiver) {
     const slider = receiver.querySelector("[data-radio-frequency]");
+    const gainSlider = receiver.querySelector("[data-radio-gain]");
     const actorSelect = receiver.querySelector("[name='radioActorId']");
 
     activateRadioDial(receiver, slider);
+    activateRadioGain(receiver, gainSlider);
+    activateRadioActorPicker(receiver, root);
 
-    actorSelect?.addEventListener("change", () => updateRadioReceiverDom(root, liveRadioFrequency));
+    actorSelect?.addEventListener("change", () => updateRadioReceiverDom(root, liveRadioFrequency, liveRadioGain));
 
     receiver.querySelector("[data-request-radio-lock]")?.addEventListener("click", async event => {
       event.preventDefault();
@@ -983,7 +1017,7 @@ function activateRadioListeners(root) {
       await sendAction("performRadioLock", radioLockPayload(receiver));
     });
 
-    updateRadioReceiverDom(root, liveRadioFrequency);
+    updateRadioReceiverDom(root, liveRadioFrequency, liveRadioGain);
   } else {
     stopRadioAudio();
   }
@@ -1000,8 +1034,8 @@ function activateRadioListeners(root) {
     button.title = uiState.radioMuted ? "Unmute Receiver Audio" : "Mute Receiver Audio";
     if (icon) icon.className = `fa-solid ${uiState.radioMuted ? "fa-volume-xmark" : "fa-volume-high"}`;
     if (label) label.textContent = uiState.radioMuted ? "Unmute" : "Mute";
-    if (uiState.radioMuted) stopRadioAudio({ resetStability: false });
-    else updateRadioReceiverDom(root, liveRadioFrequency);
+    fadeRadioAudioForMute(uiState.radioMuted);
+    if (!uiState.radioMuted) updateRadioReceiverDom(root, liveRadioFrequency, liveRadioGain);
   });
 
   root.querySelector("[data-toggle-radio-power]")?.addEventListener("click", async event => {
@@ -1047,11 +1081,12 @@ function activateRadioListeners(root) {
         frequency: formData.get("frequency"),
         signalRange: formData.get("signalRange"),
         lockTolerance: formData.get("lockTolerance"),
+        targetGain: formData.get("targetGain"),
+        gainTolerance: formData.get("gainTolerance"),
         source: formData.get("source"),
         startTurn: formData.get("startTurn"),
         endTurn: formData.get("endTurn"),
         skillName: formData.get("skillName"),
-        fallbackDie: formData.get("fallbackDie"),
         modifier: formData.get("modifier"),
         partialText: formData.get("partialText"),
         fullText: formData.get("fullText"),
@@ -1217,6 +1252,123 @@ function activateRadioDial(receiver, slider) {
   });
 }
 
+function activateRadioGain(receiver, slider) {
+  if (!slider || receiver.dataset.radioPowered !== "true") return;
+
+  const applyGain = value => {
+    const gain = normalizeRadioGain(value);
+    slider.value = gain;
+    applyLiveRadioGain(gain, game.user?.name || "Operator", Date.now());
+    queueRadioGainBroadcast(gain);
+    return gain;
+  };
+  const commitGain = async gain => {
+    if (radioGainCommitTimer) clearTimeout(radioGainCommitTimer);
+    radioGainCommitTimer = null;
+    await sendAction("adjustRadioGain", { gain: normalizeRadioGain(gain ?? slider.value) });
+  };
+  const scheduleCommit = gain => {
+    if (radioGainCommitTimer) clearTimeout(radioGainCommitTimer);
+    radioGainCommitTimer = setTimeout(() => {
+      radioGainCommitTimer = null;
+      sendAction("adjustRadioGain", { gain: normalizeRadioGain(gain) });
+    }, 180);
+  };
+
+  slider.addEventListener("input", event => {
+    const gain = applyGain(event.currentTarget.value);
+    scheduleCommit(gain);
+  });
+
+  slider.addEventListener("change", async event => {
+    await commitGain(event.currentTarget.value);
+  });
+
+  slider.addEventListener("wheel", event => {
+    event.preventDefault();
+    const step = event.shiftKey ? 0.1 : RADIO_GAIN_STEP;
+    const gain = applyGain(toNumber(slider.value, RADIO_DEFAULT_GAIN) + (event.deltaY < 0 ? step : -step));
+    scheduleCommit(gain);
+  }, { passive: false });
+}
+
+function activateRadioActorPicker(receiver, root) {
+  const picker = receiver.querySelector("[data-radio-actor-picker]");
+  const search = picker?.querySelector("[data-radio-actor-search]");
+  const actorId = picker?.querySelector("[name='radioActorId']");
+  const results = picker?.querySelector("[data-radio-actor-results]");
+  const options = Array.from(results?.querySelectorAll("[data-radio-actor-option]") || []);
+  if (!picker || !search || !actorId || !results) return;
+
+  let activeIndex = -1;
+  const visibleOptions = () => options.filter(option => !option.hidden);
+  const setActive = index => {
+    const visible = visibleOptions();
+    activeIndex = visible.length ? (index + visible.length) % visible.length : -1;
+    options.forEach(option => option.classList.remove("is-active"));
+    if (activeIndex >= 0) {
+      visible[activeIndex].classList.add("is-active");
+      visible[activeIndex].scrollIntoView({ block: "nearest" });
+    }
+  };
+  const close = () => {
+    results.hidden = true;
+    search.setAttribute("aria-expanded", "false");
+    activeIndex = -1;
+    options.forEach(option => option.classList.remove("is-active"));
+  };
+  const filter = () => {
+    const query = cleanString(search.value).toLocaleLowerCase();
+    let shown = 0;
+    for (const option of options) {
+      const matches = !query || cleanString(option.dataset.actorName).toLocaleLowerCase().includes(query);
+      option.hidden = !matches || shown >= 12;
+      if (matches && shown < 12) shown += 1;
+    }
+    results.hidden = shown === 0;
+    search.setAttribute("aria-expanded", String(shown > 0));
+    setActive(shown ? 0 : -1);
+  };
+  const choose = option => {
+    if (!option) return;
+    actorId.value = option.dataset.radioActorOption || "";
+    search.value = option.dataset.actorName || option.textContent.trim();
+    search.dataset.selectedActorName = search.value;
+    actorId.dispatchEvent(new Event("change", { bubbles: true }));
+    close();
+  };
+
+  search.addEventListener("focus", filter);
+  search.addEventListener("input", () => {
+    if (search.value !== search.dataset.selectedActorName) actorId.value = "";
+    filter();
+    updateRadioReceiverDom(root, liveRadioFrequency, liveRadioGain);
+  });
+  search.addEventListener("keydown", event => {
+    const visible = visibleOptions();
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (results.hidden) filter();
+      setActive(activeIndex + (event.key === "ArrowDown" ? 1 : -1));
+      return;
+    }
+    if (event.key === "Enter" && visible.length) {
+      event.preventDefault();
+      choose(visible[Math.max(0, activeIndex)]);
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close();
+    }
+  });
+  search.addEventListener("blur", () => setTimeout(close, 120));
+  options.forEach(option => {
+    option.addEventListener("pointerdown", event => event.preventDefault());
+    option.addEventListener("click", () => choose(option));
+  });
+}
+
 function openRadioAudioPicker(button) {
   const fieldName = cleanString(button.dataset.radioFilePicker);
   const input = button.closest("form")?.elements?.namedItem(fieldName);
@@ -1246,6 +1398,7 @@ function radioLockPayload(receiver) {
   return {
     actorId: receiver.querySelector("[name='radioActorId']")?.value || "",
     frequency: receiver.querySelector("[data-radio-frequency]")?.value || liveRadioFrequency || RADIO_DEFAULT_FREQUENCY,
+    gain: receiver.querySelector("[data-radio-gain]")?.value || liveRadioGain || RADIO_DEFAULT_GAIN,
     stabilized: Boolean(radioStabilityState.ready)
   };
 }
@@ -1259,6 +1412,14 @@ function bindSocket() {
       const sender = users().find(user => user.id === packet.userId);
       if (!sender) return;
       applyLiveRadioFrequency(packet.frequency, sender.name || "Operator", packet.stamp);
+      return;
+    }
+
+    if (packet.type === "radioGain") {
+      if (getWorldData().radio.poweredOn === false) return;
+      const sender = users().find(user => user.id === packet.userId);
+      if (!sender) return;
+      applyLiveRadioGain(packet.gain, sender.name || "Operator", packet.stamp);
       return;
     }
 
@@ -1443,6 +1604,9 @@ async function processAction(action, payload, userId) {
       break;
     case "tuneRadio":
       tuneRadio(data, payload, user);
+      break;
+    case "adjustRadioGain":
+      adjustRadioGain(data, payload, user);
       break;
     case "requestRadioLock":
       requestRadioLock(data, payload, user);
@@ -1654,16 +1818,26 @@ function tuneRadio(data, payload, user) {
   liveRadioTunedBy = data.radio.lastTunedBy;
 }
 
+function adjustRadioGain(data, payload, user) {
+  ensureRadioPowered(data);
+  data.radio.gain = normalizeRadioGain(payload.gain);
+  data.radio.lastTunedBy = user.name || "Operator";
+  liveRadioGain = data.radio.gain;
+  liveRadioTunedBy = data.radio.lastTunedBy;
+}
+
 function requestRadioLock(data, payload, user) {
   ensureRadioPowered(data);
   if (user.isGM || data.radio.permissions[user.id]) throw new Error("You already have permission to lock a signal.");
   if (!payload.stabilized) throw new Error("Hold the carrier steady before requesting a lock.");
   const actor = radioActorForUser(payload.actorId, user);
   const frequency = normalizeRadioFrequency(payload.frequency);
-  const signal = radioSignalAtFrequency(data, frequency);
-  if (!signal?.lockReady) throw new Error("Tune closer to the carrier before requesting a lock.");
+  const gain = normalizeRadioGain(payload.gain);
+  const signal = radioSignalAtFrequency(data, frequency, gain);
+  ensureRadioSignalAligned(signal);
 
   data.radio.frequency = frequency;
+  data.radio.gain = gain;
   data.radio.lastTunedBy = user.name || "Operator";
   data.radio.requests = data.radio.requests.filter(request => request.userId !== user.id);
   data.radio.requests.unshift({
@@ -1723,8 +1897,9 @@ async function performRadioLock(data, payload, user) {
   if (!payload.stabilized) throw new Error("The carrier has not stabilized yet.");
   const actor = radioActorForUser(payload.actorId, user);
   const frequency = normalizeRadioFrequency(payload.frequency);
-  const signal = radioSignalAtFrequency(data, frequency);
-  if (!signal?.lockReady) throw new Error("The receiver is not close enough to a carrier frequency.");
+  const gain = normalizeRadioGain(payload.gain);
+  const signal = radioSignalAtFrequency(data, frequency, gain);
+  ensureRadioSignalAligned(signal);
 
   const attemptLimit = Math.max(0, Math.trunc(toNumber(data.radio.settings.lockAttemptsPerTurn, 2)));
   const attemptsUsed = data.radio.attempts.filter(attempt => attempt.turn === data.currentTurn).length;
@@ -1734,7 +1909,7 @@ async function performRadioLock(data, payload, user) {
   const skillName = broadcast.skillName || "Electronics";
   const actorTraitDie = findActorTraitDie(actor, skillName);
   const unskilled = !actorTraitDie;
-  const traitDie = unskilled ? UNSKILLED_DIE : (actorTraitDie || broadcast.fallbackDie);
+  const traitDie = unskilled ? UNSKILLED_DIE : actorTraitDie;
   const baseModifier = Math.trunc(toSignedNumber(broadcast.modifier, 0));
   const modifier = baseModifier + (unskilled ? UNSKILLED_MODIFIER : 0);
   const roll = await rollSwadeTrait(traitDie, modifier);
@@ -1775,6 +1950,7 @@ async function performRadioLock(data, payload, user) {
   };
 
   data.radio.frequency = frequency;
+  data.radio.gain = gain;
   data.radio.lastTunedBy = user.name || "Operator";
   data.radio.attempts.push({ id: randomId(), turn: data.currentTurn, userId: user.id, broadcastId: broadcast.id });
   data.radio.attempts = data.radio.attempts.slice(-100);
@@ -1834,6 +2010,11 @@ function radioOutcomeLabel(outcome) {
   return "Signal Decoded";
 }
 
+function ensureRadioSignalAligned(signal) {
+  if (!signal?.frequencyReady) throw new Error("Tune closer to the carrier frequency.");
+  if (!signal.gainReady) throw new Error("Align the receiver gain before locking the signal.");
+}
+
 function activeRadioBroadcasts(data) {
   if (data.radio.poweredOn === false) return [];
   return data.radio.broadcasts.filter(broadcast => {
@@ -1844,8 +2025,9 @@ function activeRadioBroadcasts(data) {
   });
 }
 
-function radioSignalAtFrequency(data, frequency) {
+function radioSignalAtFrequency(data, frequency, gain = null) {
   const tunedFrequency = normalizeRadioFrequency(frequency);
+  const tunedGain = normalizeRadioGain(gain ?? data.radio.gain);
   let best = null;
   for (const broadcast of activeRadioBroadcasts(data)) {
     const distance = Math.abs(tunedFrequency - broadcast.frequency);
@@ -1855,12 +2037,26 @@ function radioSignalAtFrequency(data, frequency) {
     const intensity = distance <= coreRange
       ? 0.25 + 0.75 * (1 - distance / coreRange)
       : 0.25 * (1 - (distance - coreRange) / Math.max(RADIO_FREQUENCY_STEP, traceRange - coreRange));
+    const frequencyReady = distance <= broadcast.lockTolerance;
+    const targetGain = normalizeRadioGain(broadcast.targetGain);
+    const gainTolerance = normalizeRadioGainTolerance(broadcast.gainTolerance);
+    const gainDistance = Math.abs(tunedGain - targetGain);
+    const gainReady = frequencyReady && gainDistance <= gainTolerance;
+    const gainClarity = frequencyReady ? clamp(1 - gainDistance / 1.25, 0, 1) : 0;
     if (!best || intensity > best.intensity) {
       best = {
         broadcast,
         distance,
         intensity: clamp(intensity, 0, 1),
-        lockReady: distance <= broadcast.lockTolerance
+        frequencyReady,
+        gain: tunedGain,
+        targetGain,
+        gainTolerance,
+        gainDistance,
+        gainDirection: gainReady ? 0 : tunedGain < targetGain ? -1 : 1,
+        gainReady,
+        gainClarity,
+        lockReady: frequencyReady && gainReady
       };
     }
   }
@@ -1877,7 +2073,9 @@ function radioSignalPresentation(signal, stability = null) {
       stable: false,
       stabilityProgress: 0,
       stabilityLabel: "SEARCHING",
-      skillLabel: "Carrier not found"
+      skillLabel: "Carrier not found",
+      gainStatusLabel: "NO CARRIER",
+      gainClarity: 0
     };
   }
 
@@ -1885,15 +2083,38 @@ function radioSignalPresentation(signal, stability = null) {
   const partial = signal.broadcast.partialText || deriveRadioPartial(signal.broadcast.fullText);
   const stable = Boolean(stability?.ready);
   const stabilityProgress = signal.lockReady ? Math.round(clamp(toNumber(stability?.progress, 0), 0, 1) * 100) : 0;
+  const gainStatusLabel = !signal.frequencyReady
+    ? "NO CARRIER"
+    : signal.gainReady
+      ? "GAIN ALIGNED"
+      : signal.gainDirection < 0 ? "GAIN LOW" : "GAIN HIGH";
   return {
     strength,
-    strengthLabel: stable ? "SIGNAL STABLE" : signal.lockReady ? "HOLD STEADY" : strength >= 65 ? "STRONG CARRIER" : strength >= 30 ? "WEAK CARRIER" : "TRACE SIGNAL",
+    strengthLabel: stable
+      ? "SIGNAL STABLE"
+      : signal.lockReady
+        ? "HOLD STEADY"
+        : signal.frequencyReady
+          ? "CARRIER ACQUIRED"
+          : strength >= 65 ? "STRONG CARRIER" : strength >= 30 ? "WEAK CARRIER" : "TRACE SIGNAL",
     snippet: revealRadioPartial(partial, signal.intensity),
     lockReady: signal.lockReady,
+    frequencyReady: signal.frequencyReady,
+    gainReady: signal.gainReady,
+    gainStatusLabel,
+    gainClarity: Math.round(signal.gainClarity * 100),
     stable,
     stabilityProgress,
-    stabilityLabel: stable ? "LOCK READY" : signal.lockReady ? `STABILIZING ${stabilityProgress}%` : "FINE TUNE REQUIRED",
-    skillLabel: stable ? `${signal.broadcast.skillName} ${formatSigned(signal.broadcast.modifier)}` : signal.lockReady ? "Hold the dial steady" : "Tune closer to identify the carrier"
+    stabilityLabel: stable
+      ? "LOCK READY"
+      : signal.lockReady
+        ? `STABILIZING ${stabilityProgress}%`
+        : signal.frequencyReady ? "GAIN ALIGNMENT REQUIRED" : "FINE TUNE REQUIRED",
+    skillLabel: stable
+      ? `${signal.broadcast.skillName} ${formatSigned(signal.broadcast.modifier)}`
+      : signal.lockReady
+        ? "Hold both controls steady"
+        : signal.frequencyReady ? "Adjust signal gain" : "Tune closer to identify the carrier"
   };
 }
 
@@ -1906,7 +2127,9 @@ function radioPoweredOffPresentation() {
     stable: false,
     stabilityProgress: 0,
     stabilityLabel: "POWER OFF",
-    skillLabel: "Receiver unavailable"
+    skillLabel: "Receiver unavailable",
+    gainStatusLabel: "POWER OFF",
+    gainClarity: 0
   };
 }
 
@@ -1942,8 +2165,25 @@ function normalizeRadioFrequency(value) {
   return Math.round(frequency / RADIO_FREQUENCY_STEP) * RADIO_FREQUENCY_STEP;
 }
 
+function normalizeRadioGain(value) {
+  const gain = clamp(toNumber(value, RADIO_DEFAULT_GAIN), RADIO_GAIN_MIN, RADIO_GAIN_MAX);
+  return Math.round(gain / RADIO_GAIN_STEP) * RADIO_GAIN_STEP;
+}
+
+function normalizeRadioGainTolerance(value) {
+  return Math.round(clamp(toNumber(value, RADIO_DEFAULT_GAIN_TOLERANCE), RADIO_GAIN_STEP, 0.5) * 100) / 100;
+}
+
 function formatRadioFrequency(value) {
   return normalizeRadioFrequency(value).toFixed(1);
+}
+
+function formatRadioGain(value) {
+  return normalizeRadioGain(value).toFixed(2);
+}
+
+function formatRadioGainTolerance(value) {
+  return normalizeRadioGainTolerance(value).toFixed(2);
 }
 
 function radioDialAngle(value) {
@@ -1968,6 +2208,23 @@ function queueRadioFrequencyBroadcast(frequency) {
   }, 60);
 }
 
+function queueRadioGainBroadcast(gain) {
+  if (getWorldData().radio.poweredOn === false) return;
+  queuedRadioGain = normalizeRadioGain(gain);
+  if (radioGainBroadcastTimer) return;
+  radioGainBroadcastTimer = setTimeout(() => {
+    radioGainBroadcastTimer = null;
+    const next = queuedRadioGain;
+    queuedRadioGain = null;
+    game.socket.emit(SOCKET_NAME, {
+      type: "radioGain",
+      gain: next,
+      userId: game.user.id,
+      stamp: Date.now()
+    });
+  }, 60);
+}
+
 function applyLiveRadioFrequency(frequency, tunedBy = "", stamp = Date.now()) {
   if (getWorldData().radio.poweredOn === false) return;
   const nextStamp = toNumber(stamp, Date.now());
@@ -1975,10 +2232,20 @@ function applyLiveRadioFrequency(frequency, tunedBy = "", stamp = Date.now()) {
   liveRadioFrequency = normalizeRadioFrequency(frequency);
   liveRadioTunedBy = cleanString(tunedBy) || liveRadioTunedBy;
   const root = trainApp?.element?.querySelector?.(".dt-root");
-  if (root) updateRadioReceiverDom(root, liveRadioFrequency);
+  if (root) updateRadioReceiverDom(root, liveRadioFrequency, liveRadioGain);
 }
 
-function updateRadioReceiverDom(root, frequency = null) {
+function applyLiveRadioGain(gain, tunedBy = "", stamp = Date.now()) {
+  if (getWorldData().radio.poweredOn === false) return;
+  const nextStamp = toNumber(stamp, Date.now());
+  liveRadioStamp = nextStamp;
+  liveRadioGain = normalizeRadioGain(gain);
+  liveRadioTunedBy = cleanString(tunedBy) || liveRadioTunedBy;
+  const root = trainApp?.element?.querySelector?.(".dt-root");
+  if (root) updateRadioReceiverDom(root, liveRadioFrequency, liveRadioGain);
+}
+
+function updateRadioReceiverDom(root, frequency = null, gain = null) {
   const receiver = root?.querySelector?.("[data-radio-receiver]");
   if (!receiver) {
     stopRadioAudio();
@@ -1988,10 +2255,12 @@ function updateRadioReceiverDom(root, frequency = null) {
   const data = getWorldData();
   const poweredOn = data.radio.poweredOn !== false;
   const tunedFrequency = normalizeRadioFrequency(frequency ?? liveRadioFrequency ?? data.radio.frequency);
+  const tunedGain = normalizeRadioGain(gain ?? liveRadioGain ?? data.radio.gain);
   liveRadioFrequency = tunedFrequency;
-  const signal = poweredOn ? radioSignalAtFrequency(data, tunedFrequency) : null;
+  liveRadioGain = tunedGain;
+  const signal = poweredOn ? radioSignalAtFrequency(data, tunedFrequency, tunedGain) : null;
   const stability = poweredOn
-    ? radioStabilityAt(signal, tunedFrequency, data.radio.settings.stabilizationSeconds)
+    ? radioStabilityAt(signal, tunedFrequency, tunedGain, data.radio.settings.stabilizationSeconds)
     : { ready: false, progress: 0 };
   if (!poweredOn) resetRadioStability();
   const presentation = poweredOn ? radioSignalPresentation(signal, stability) : radioPoweredOffPresentation();
@@ -2008,6 +2277,18 @@ function updateRadioReceiverDom(root, frequency = null) {
   }
   const display = receiver.querySelector("[data-radio-frequency-display]");
   if (display) display.textContent = `${formatRadioFrequency(tunedFrequency)} MHz`;
+  const gainSlider = receiver.querySelector("[data-radio-gain]");
+  if (gainSlider) {
+    gainSlider.value = tunedGain;
+    gainSlider.disabled = !poweredOn;
+    gainSlider.setAttribute("aria-valuenow", formatRadioGain(tunedGain));
+  }
+  const gainDisplay = receiver.querySelector("[data-radio-gain-display]");
+  if (gainDisplay) gainDisplay.textContent = formatRadioGain(tunedGain);
+  const gainStatus = receiver.querySelector("[data-radio-gain-status]");
+  if (gainStatus) gainStatus.textContent = presentation.gainStatusLabel;
+  const gainClarity = receiver.querySelector("[data-radio-gain-clarity]");
+  if (gainClarity) gainClarity.textContent = `CLARITY ${presentation.gainClarity}%`;
   const tunedBy = receiver.querySelector("[data-radio-tuned-by]");
   if (tunedBy) tunedBy.textContent = `Tuned by ${liveRadioTunedBy || data.radio.lastTunedBy || "No operator"}`;
   const meter = receiver.querySelector("[data-radio-strength-fill]");
@@ -2025,29 +2306,43 @@ function updateRadioReceiverDom(root, frequency = null) {
 
   const actorSelect = receiver.querySelector("[name='radioActorId']");
   if (actorSelect) actorSelect.disabled = !poweredOn;
+  const actorSearch = receiver.querySelector("[data-radio-actor-search]");
+  if (actorSearch) actorSearch.disabled = !poweredOn;
+  if (!poweredOn) {
+    const actorResults = receiver.querySelector("[data-radio-actor-results]");
+    if (actorResults) actorResults.hidden = true;
+  }
   const actorSelected = Boolean(actorSelect?.value);
   receiver.querySelectorAll("[data-perform-radio-lock], [data-request-radio-lock]").forEach(button => {
     button.disabled = !poweredOn || !presentation.stable || !actorSelected || button.dataset.requestPending === "true";
   });
   receiver.classList.toggle("is-powered-off", !poweredOn);
   receiver.classList.toggle("is-signal", Boolean(signal));
+  receiver.classList.toggle("is-carrier-acquired", Boolean(signal?.frequencyReady));
+  receiver.classList.toggle("is-gain-aligned", Boolean(signal?.gainReady));
   receiver.classList.toggle("is-stabilizing", presentation.lockReady && !presentation.stable);
   receiver.classList.toggle("is-lock-ready", presentation.stable);
   syncRadioAmbient(data, signal, presentation.stable);
 }
 
-function radioStabilityAt(signal, frequency, holdSeconds) {
+function radioStabilityAt(signal, frequency, gain, holdSeconds) {
   if (!signal?.lockReady) {
     resetRadioStability();
     return { ready: false, progress: 0, elapsedMs: 0 };
   }
 
   const tunedFrequency = normalizeRadioFrequency(frequency);
+  const tunedGain = normalizeRadioGain(gain);
   const broadcastId = signal.broadcast.id;
-  if (radioStabilityState.broadcastId !== broadcastId || radioStabilityState.frequency !== tunedFrequency) {
+  if (
+    radioStabilityState.broadcastId !== broadcastId
+    || radioStabilityState.frequency !== tunedFrequency
+    || radioStabilityState.gain !== tunedGain
+  ) {
     radioStabilityState = {
       broadcastId,
       frequency: tunedFrequency,
+      gain: tunedGain,
       startedAt: Date.now(),
       ready: false
     };
@@ -2067,7 +2362,7 @@ function radioStabilityAt(signal, frequency, holdSeconds) {
         resetRadioStability();
         return;
       }
-      updateRadioReceiverDom(root, liveRadioFrequency);
+      updateRadioReceiverDom(root, liveRadioFrequency, liveRadioGain);
     }, 100);
   }
 
@@ -2084,6 +2379,7 @@ function resetRadioStability() {
   radioStabilityState = {
     broadcastId: "",
     frequency: null,
+    gain: null,
     startedAt: 0,
     ready: false
   };
@@ -2094,18 +2390,31 @@ function radioTabVisible() {
 }
 
 function syncRadioAmbient(data, signal, stable = false) {
-  if (!radioTabVisible() || data.radio.poweredOn === false || uiState.radioMuted) {
+  if (!radioTabVisible() || data.radio.poweredOn === false) {
     stopRadioAudio({ resetStability: data.radio.poweredOn === false || !radioTabVisible() });
     return;
   }
 
   const volume = clamp(toNumber(data.radio.settings.volume, 0.55), 0, 1);
   const intensity = signal?.intensity || 0;
-  const targets = {
-    noise: volume * (stable ? 0.08 : Math.max(0.18, 1 - intensity * 0.82)),
-    approach: volume * (stable ? 0.22 : intensity),
-    found: volume * (stable ? Math.max(0.5, intensity) : 0)
-  };
+  const gainClarity = signal?.frequencyReady ? clamp(toNumber(signal.gainClarity, 0), 0, 1) : 0;
+  const targets = stable
+    ? {
+        noise: volume * 0.08,
+        approach: volume * 0.22,
+        found: volume * Math.max(0.5, intensity)
+      }
+    : signal?.frequencyReady
+      ? {
+          noise: volume * (0.34 - gainClarity * 0.16),
+          approach: volume * (0.55 - gainClarity * 0.25),
+          found: volume * (0.18 + gainClarity * 0.55)
+        }
+      : {
+          noise: volume * Math.max(0.18, 1 - intensity * 0.82),
+          approach: volume * intensity,
+          found: 0
+        };
   const sources = {
     noise: data.radio.settings.noiseSoundUrl,
     approach: data.radio.settings.approachSoundUrl,
@@ -2129,7 +2438,7 @@ async function ensureRadioAmbientTrack(kind, source) {
   }
   if (current?.url === url) {
     if (current.sound?.loaded && !current.sound.playing) {
-      current.sound.play({ loop: true, volume: current.targetVolume || 0 }).catch(() => {});
+      current.sound.play({ loop: true, volume: uiState.radioMuted ? 0 : current.targetVolume || 0 }).catch(() => {});
     }
     return;
   }
@@ -2150,7 +2459,7 @@ async function ensureRadioAmbientTrack(kind, source) {
       return;
     }
     await sound.play({ loop: true, volume: 0 });
-    if (track.targetVolume > 0) await sound.fade(track.targetVolume, { duration: 450, type: "linear" });
+    if (track.targetVolume > 0 && !uiState.radioMuted) await sound.fade(track.targetVolume, { duration: 450, type: "linear" });
   } catch (_error) {
     if (radioAmbientTracks.get(kind) === track) radioAmbientTracks.delete(kind);
   }
@@ -2160,7 +2469,18 @@ function crossfadeRadioTracks(targets, duration = 450) {
   for (const [kind, track] of radioAmbientTracks) {
     const target = clamp(toNumber(targets[kind], 0), 0, 1);
     track.targetVolume = target;
-    if (track.sound?.playing) track.sound.fade(target, { duration, type: "linear" }).catch(() => {});
+    const audibleTarget = uiState.radioMuted ? 0 : target;
+    if (track.sound?.playing) track.sound.fade(audibleTarget, { duration, type: "linear" }).catch(() => {});
+  }
+}
+
+function fadeRadioAudioForMute(muted) {
+  for (const track of radioAmbientTracks.values()) {
+    const target = muted ? 0 : track.targetVolume;
+    if (track.sound?.playing) track.sound.fade(target, { duration: 180, type: "linear" }).catch(() => {});
+  }
+  for (const [sound, targetVolume] of radioOneShotAudio) {
+    if (sound?.playing) sound.fade(muted ? 0 : targetVolume, { duration: 180, type: "linear" }).catch(() => {});
   }
 }
 
@@ -2171,7 +2491,7 @@ function stopRadioAudio({ resetStability: shouldResetStability = true } = {}) {
     track.sound?.stop?.().catch?.(() => {});
   }
   radioAmbientTracks.clear();
-  for (const sound of radioOneShotAudio) {
+  for (const sound of radioOneShotAudio.keys()) {
     sound.stop?.().catch?.(() => {});
   }
   radioOneShotAudio.clear();
@@ -2214,11 +2534,12 @@ async function playRadioOneShot(source, volume) {
   const SoundClass = foundry?.audio?.Sound;
   if (!SoundClass) throw new Error("Foundry Sound API is unavailable.");
   const sound = new SoundClass(source, { context: game.audio?.interface });
-  radioOneShotAudio.add(sound);
+  const targetVolume = clamp(toNumber(volume, 0.55), 0, 1);
+  radioOneShotAudio.set(sound, targetVolume);
   try {
     await sound.load();
     await sound.play({
-      volume: clamp(toNumber(volume, 0.55), 0, 1),
+      volume: uiState.radioMuted ? 0 : targetVolume,
       onended: () => radioOneShotAudio.delete(sound)
     });
     return sound;
@@ -3377,6 +3698,7 @@ function defaultSettings() {
 function defaultRadioData() {
   return {
     frequency: RADIO_DEFAULT_FREQUENCY,
+    gain: RADIO_DEFAULT_GAIN,
     lastTunedBy: "",
     poweredOn: true,
     permissions: {},
@@ -3402,11 +3724,12 @@ function defaultRadioBroadcast(index = 0) {
     frequency: normalizeRadioFrequency(96.4 + index * 1.7),
     signalRange: 1.8,
     lockTolerance: 0.2,
+    targetGain: RADIO_DEFAULT_GAIN,
+    gainTolerance: RADIO_DEFAULT_GAIN_TOLERANCE,
     source: "Local / Unknown",
     startTurn: 1,
     endTurn: 0,
     skillName: "Electronics",
-    fallbackDie: 6,
     modifier: 0,
     partialText: "Fort Veyr ... western line ... do not approach",
     fullText: "Fort Veyr calling all railway traffic. The western bridge has collapsed. Do not approach by the western line.",
@@ -3654,6 +3977,7 @@ function normalizeRadioData(raw, fallback = defaultRadioData()) {
   }
   return {
     frequency: normalizeRadioFrequency(source.frequency),
+    gain: normalizeRadioGain(source.gain),
     lastTunedBy: cleanString(source.lastTunedBy),
     poweredOn: source.poweredOn === undefined ? true : Boolean(source.poweredOn),
     permissions,
@@ -3674,11 +3998,12 @@ function normalizeRadioBroadcast(item) {
     frequency: normalizeRadioFrequency(item?.frequency),
     signalRange: clamp(toNumber(item?.signalRange, fallback.signalRange), RADIO_FREQUENCY_STEP, 10),
     lockTolerance: clamp(toNumber(item?.lockTolerance, fallback.lockTolerance), RADIO_FREQUENCY_STEP, 2),
+    targetGain: normalizeRadioGain(item?.targetGain),
+    gainTolerance: normalizeRadioGainTolerance(item?.gainTolerance),
     source: cleanString(item?.source) || "Unknown",
     startTurn: Math.max(1, Math.trunc(toNumber(item?.startTurn, 1))),
     endTurn: Math.max(0, Math.trunc(toNumber(item?.endTurn, 0))),
     skillName: cleanString(item?.skillName) || "Electronics",
-    fallbackDie: HUNTING_DIE_OPTIONS.includes(Number(item?.fallbackDie)) ? Number(item.fallbackDie) : 6,
     modifier: Math.trunc(toSignedNumber(item?.modifier, 0)),
     partialText: cleanString(item?.partialText),
     fullText: cleanString(item?.fullText) || fallback.fullText,

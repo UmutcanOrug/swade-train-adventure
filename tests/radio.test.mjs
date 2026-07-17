@@ -48,7 +48,7 @@ const context = {
 };
 context.globalThis = context;
 vm.createContext(context);
-vm.runInContext(`${source}\n;globalThis.__radioTest = { normalizeRadioBroadcast, radioSignalAtFrequency, radioSignalPresentation, radioPoweredOffPresentation, ensureRadioPowered, parseRadioResponses, normalizeRadioFrequency, radioDialAngle };`, context);
+vm.runInContext(`${source}\n;globalThis.__radioTest = { normalizeRadioBroadcast, radioSignalAtFrequency, radioSignalPresentation, radioPoweredOffPresentation, ensureRadioPowered, ensureRadioSignalAligned, parseRadioResponses, normalizeRadioFrequency, normalizeRadioGain, radioDialAngle, radioActorOptions };`, context);
 
 const radio = context.__radioTest;
 
@@ -56,7 +56,7 @@ function radioData(broadcast) {
   return {
     currentTurn: 5,
     route: { biomeId: "tundra" },
-    radio: { poweredOn: true, broadcasts: [radio.normalizeRadioBroadcast(broadcast)] }
+    radio: { poweredOn: true, gain: 3, broadcasts: [radio.normalizeRadioBroadcast(broadcast)] }
   };
 }
 
@@ -160,6 +160,80 @@ test("exact tuning must stabilize before the roll becomes available", () => {
   assert.match(tuning.skillLabel, /Hold/);
   assert.equal(stable.stable, true);
   assert.match(stable.skillLabel, /Electronics/);
+});
+
+test("frequency and signal gain must both align before a lock", () => {
+  const data = radioData({
+    id: "gain-signal",
+    enabled: true,
+    frequency: 96.4,
+    signalRange: 1.5,
+    lockTolerance: 0.2,
+    targetGain: 3.25,
+    gainTolerance: 0.05
+  });
+  const lowGain = radio.radioSignalAtFrequency(data, 96.4, 2.1);
+  const aligned = radio.radioSignalAtFrequency(data, 96.4, 3.25);
+
+  assert.equal(lowGain.frequencyReady, true);
+  assert.equal(lowGain.gainReady, false);
+  assert.equal(lowGain.lockReady, false);
+  assert.equal(radio.radioSignalPresentation(lowGain).gainStatusLabel, "GAIN LOW");
+  assert.equal(aligned.gainReady, true);
+  assert.equal(aligned.lockReady, true);
+  assert.doesNotThrow(() => radio.ensureRadioSignalAligned(aligned));
+  assert.throws(() => radio.ensureRadioSignalAligned(lowGain), /receiver gain/);
+});
+
+test("gain provides no clue before the carrier frequency is acquired", () => {
+  const data = radioData({
+    id: "hidden-gain-signal",
+    enabled: true,
+    frequency: 96.4,
+    signalRange: 2,
+    lockTolerance: 0.2,
+    targetGain: 4.75,
+    gainTolerance: 0.03
+  });
+  const low = radio.radioSignalAtFrequency(data, 95.5, 1);
+  const high = radio.radioSignalAtFrequency(data, 95.5, 5);
+
+  assert.equal(low.frequencyReady, false);
+  assert.equal(high.frequencyReady, false);
+  assert.equal(low.gainClarity, 0);
+  assert.equal(high.gainClarity, 0);
+  assert.equal(radio.radioSignalPresentation(low).gainStatusLabel, "NO CARRIER");
+  assert.equal(radio.radioSignalPresentation(high).gainStatusLabel, "NO CARRIER");
+});
+
+test("legacy invalid modifiers become zero and radio fallback dice are discarded", () => {
+  const broadcast = radio.normalizeRadioBroadcast({
+    id: "legacy",
+    enabled: true,
+    modifier: "- NaN",
+    fallbackDie: 12
+  });
+
+  assert.equal(broadcast.modifier, 0);
+  assert.equal(Object.hasOwn(broadcast, "fallbackDie"), false);
+  assert.equal(radio.normalizeRadioGain(5.8), 5);
+  assert.equal(radio.normalizeRadioGain(0.4), 1);
+});
+
+test("assigned player characters are prioritized in the radio actor list", () => {
+  context.game.users.contents = [
+    { id: "gm", isGM: true },
+    { id: "player", isGM: false, character: { id: "pc" } }
+  ];
+  context.game.actors.contents = [
+    { id: "npc", name: "Aardvark NPC", img: "", isOwner: true, hasPlayerOwner: false },
+    { id: "owned", name: "Owned Ally", img: "", isOwner: true, hasPlayerOwner: true },
+    { id: "pc", name: "Player Hero", img: "", isOwner: true, hasPlayerOwner: true }
+  ];
+
+  const actors = Array.from(radio.radioActorOptions(true));
+  assert.deepEqual(actors.map(actor => actor.id), ["pc", "owned", "npc"]);
+  assert.equal(actors[0].isPlayerCharacter, true);
 });
 
 test("GM response lines retain labels and immediate outcomes", () => {

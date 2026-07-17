@@ -1060,6 +1060,99 @@
   cursor: ew-resize;
 }
 
+.dt-radio-tuning-deck {
+  display: grid;
+  grid-template-columns: minmax(170px, 1fr) 92px;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+}
+
+.dt-radio-frequency-control {
+  min-width: 0;
+}
+
+.dt-radio-gain-control {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 176px;
+  padding-left: 12px;
+  border-left: 1px solid rgba(143, 191, 150, 0.2);
+  color: #9ba69b;
+}
+
+.dt-radio-gain-control > span,
+.dt-radio-gain-control > b,
+.dt-radio-gain-control > small {
+  font-family: Consolas, "Courier New", monospace;
+  line-height: 1;
+  text-align: center;
+}
+
+.dt-radio-gain-control > span {
+  color: #829a84;
+  font-size: 0.65em;
+}
+
+.dt-radio-gain-control > strong {
+  color: #d4b169;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 1.05em;
+}
+
+.dt-radio-gain-control > b {
+  color: #a88b56;
+  font-size: 0.62em;
+}
+
+.dt-radio-gain-control > small {
+  color: #788278;
+  font-size: 0.55em;
+}
+
+.dt-radio-gain-rail {
+  display: grid;
+  grid-template-columns: 28px 14px;
+  gap: 3px;
+  align-items: stretch;
+  height: 106px;
+}
+
+.dt-radio-tuner .dt-radio-gain-rail input[type="range"] {
+  width: 28px;
+  height: 106px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  appearance: slider-vertical;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  accent-color: var(--dt-brass-2);
+  cursor: ns-resize;
+}
+
+.dt-radio-gain-ticks {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 2px 0;
+  color: #6f786f;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.58em;
+}
+
+.dt-radio-receiver.is-carrier-acquired .dt-radio-gain-control > b {
+  color: #d1a14b;
+}
+
+.dt-radio-receiver.is-gain-aligned .dt-radio-gain-control > strong,
+.dt-radio-receiver.is-gain-aligned .dt-radio-gain-control > b {
+  color: var(--dt-radio-green);
+  text-shadow: 0 0 7px rgba(143, 191, 150, 0.28);
+}
+
 .dt-radio-settings-grid input[type="range"] {
   min-height: 34px;
   margin: 0;
@@ -1095,6 +1188,104 @@
   grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) minmax(150px, auto);
   gap: 10px;
   align-items: end;
+}
+
+.dt-radio-lock-row > label {
+  min-width: 0;
+}
+
+.dt-radio-actor-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.dt-radio-actor-picker > input[type="search"] {
+  width: 100%;
+  min-width: 0;
+}
+
+.dt-radio-actor-results[hidden] {
+  display: none;
+}
+
+.dt-radio-actor-results {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  display: grid;
+  max-height: 272px;
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid #7f6437;
+  border-radius: 5px;
+  background: #101411;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.55);
+}
+
+.dt-radio-actor-results button {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  width: 100%;
+  min-height: 42px;
+  padding: 5px 7px;
+  border: 0;
+  border-bottom: 1px solid rgba(86, 76, 59, 0.44);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--dt-text);
+  text-align: left;
+}
+
+.dt-radio-actor-results button:last-child {
+  border-bottom: 0;
+}
+
+.dt-radio-actor-results button:hover,
+.dt-radio-actor-results button:focus-visible,
+.dt-radio-actor-results button.is-active {
+  outline: 0;
+  background: rgba(209, 161, 75, 0.14);
+  color: #f0dfb9;
+}
+
+.dt-radio-actor-results button > img,
+.dt-radio-actor-results button > i {
+  width: 30px;
+  height: 30px;
+  border: 1px solid #4f594f;
+  border-radius: 3px;
+  object-fit: cover;
+}
+
+.dt-radio-actor-results button > i {
+  display: grid;
+  place-items: center;
+  color: #829a84;
+}
+
+.dt-radio-actor-results button > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dt-radio-actor-results strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dt-radio-actor-results small {
+  color: #92a594;
+  font-size: 0.72em;
+}
+
+.dt-radio-actor-results small i {
+  color: #d4b169;
 }
 
 .dt-radio-lock-status {
@@ -1262,7 +1453,7 @@
 
 .dt-radio-console {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
+  grid-template-columns: minmax(0, 1fr) 310px;
   gap: 18px;
   align-items: stretch;
 }

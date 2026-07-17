@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.3
+
+- Added a shared 1.00-5.00 Signal Gain control beside the frequency dial. A signal can stabilize and lock only when both frequency and Gain are aligned.
+- Gain gives no directional or audio clue until the carrier frequency is acquired. Once acquired, GAIN LOW, GAIN HIGH, GAIN ALIGNED, and clarity feedback guide the second tuning step.
+- Added per-broadcast Target Gain and Gain Tolerance controls for GM customization.
+- Changed receiver audio so Mute fades tracks to silence without stopping them; Unmute returns at the existing playback positions instead of restarting loops.
+- Replaced the full actor dropdown with a searchable actor picker limited to 12 visible matches.
+- Player-assigned characters and player-owned actors are prioritized in radio actor search results.
+- Removed the redundant radio Fallback Die setting. Missing radio skills now always use the SWADE Unskilled d4-2 attempt.
+- Fixed legacy invalid radio modifiers such as `- NaN`; invalid values now normalize and display as `0`.
+
 ## 0.2.2
 
 - Added a per-user Mute control that stops receiver loops and decoded message audio without interrupting tuning or stabilization.

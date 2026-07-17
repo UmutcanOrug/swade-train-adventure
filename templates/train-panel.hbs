@@ -542,27 +542,55 @@
               </div>
 
               <div class="dt-radio-tuner">
-                <div class="dt-radio-dial-stage">
-                  <button
-                    type="button"
-                    class="dt-radio-dial"
-                    data-radio-dial
-                    role="slider"
-                    aria-label="Tune radio frequency"
-                    aria-valuemin="{{radio.minFrequency}}"
-                    aria-valuemax="{{radio.maxFrequency}}"
-                    aria-valuenow="{{radio.frequency}}"
-                    title="Turn to tune. Mouse wheel and arrow keys fine tune."
-                    style="--dial-angle: {{radio.dialAngle}}deg;"
-                    {{#unless radio.poweredOn}}disabled{{/unless}}
-                  >
-                    <span class="dt-radio-dial-pointer"></span>
-                    <span class="dt-radio-dial-cap"><i class="fa-solid fa-radio"></i></span>
-                  </button>
-                </div>
-                <input class="dt-radio-frequency-input" type="range" min="{{radio.minFrequency}}" max="{{radio.maxFrequency}}" step="{{radio.frequencyStep}}" value="{{radio.frequencyRaw}}" data-radio-frequency tabindex="-1" aria-hidden="true" {{#unless radio.poweredOn}}disabled{{/unless}}>
-                <div class="dt-radio-scale" aria-hidden="true">
-                  <span>80</span><span>90</span><span>100</span><span>110</span><span>120</span>
+                <div class="dt-radio-tuning-deck">
+                  <div class="dt-radio-frequency-control">
+                    <div class="dt-radio-dial-stage">
+                      <button
+                        type="button"
+                        class="dt-radio-dial"
+                        data-radio-dial
+                        role="slider"
+                        aria-label="Tune radio frequency"
+                        aria-valuemin="{{radio.minFrequency}}"
+                        aria-valuemax="{{radio.maxFrequency}}"
+                        aria-valuenow="{{radio.frequency}}"
+                        title="Turn to tune. Mouse wheel and arrow keys fine tune."
+                        style="--dial-angle: {{radio.dialAngle}}deg;"
+                        {{#unless radio.poweredOn}}disabled{{/unless}}
+                      >
+                        <span class="dt-radio-dial-pointer"></span>
+                        <span class="dt-radio-dial-cap"><i class="fa-solid fa-radio"></i></span>
+                      </button>
+                    </div>
+                    <input class="dt-radio-frequency-input" type="range" min="{{radio.minFrequency}}" max="{{radio.maxFrequency}}" step="{{radio.frequencyStep}}" value="{{radio.frequencyRaw}}" data-radio-frequency tabindex="-1" aria-hidden="true" {{#unless radio.poweredOn}}disabled{{/unless}}>
+                    <div class="dt-radio-scale" aria-hidden="true">
+                      <span>80</span><span>90</span><span>100</span><span>110</span><span>120</span>
+                    </div>
+                  </div>
+
+                  <div class="dt-radio-gain-control">
+                    <span>SIGNAL GAIN</span>
+                    <div class="dt-radio-gain-rail">
+                      <input
+                        type="range"
+                        min="{{radio.gainMin}}"
+                        max="{{radio.gainMax}}"
+                        step="{{radio.gainStep}}"
+                        value="{{radio.gainRaw}}"
+                        data-radio-gain
+                        aria-label="Adjust receiver signal gain"
+                        aria-valuemin="{{radio.gainMin}}"
+                        aria-valuemax="{{radio.gainMax}}"
+                        aria-valuenow="{{radio.gain}}"
+                        title="Drag to adjust. Mouse wheel fine tunes; Shift changes by 0.10."
+                        {{#unless radio.poweredOn}}disabled{{/unless}}
+                      >
+                      <div class="dt-radio-gain-ticks" aria-hidden="true"><span>5</span><span>3</span><span>1</span></div>
+                    </div>
+                    <strong data-radio-gain-display>{{radio.gain}}</strong>
+                    <b data-radio-gain-status>{{radio.signal.gainStatusLabel}}</b>
+                    <small data-radio-gain-clarity>CLARITY {{radio.signal.gainClarity}}%</small>
+                  </div>
                 </div>
               </div>
             </div>
@@ -575,12 +603,21 @@
             <div class="dt-radio-lock-row">
               <label>
                 <span>Operator Actor</span>
-                <select name="radioActorId" {{#unless radio.poweredOn}}disabled{{/unless}}>
-                  <option value="">Select actor</option>
+                <div class="dt-radio-actor-picker" data-radio-actor-picker>
+                  <input type="search" data-radio-actor-search placeholder="Search actors..." autocomplete="off" role="combobox" aria-expanded="false" aria-controls="dt-radio-actor-results" {{#unless radio.poweredOn}}disabled{{/unless}}>
+                  <input type="hidden" name="radioActorId" value="">
+                  <div class="dt-radio-actor-results" id="dt-radio-actor-results" data-radio-actor-results role="listbox" hidden>
                   {{#each radioActors}}
-                    <option value="{{id}}">{{name}}</option>
+                    <button type="button" data-radio-actor-option="{{id}}" data-actor-name="{{name}}" role="option">
+                      {{#if img}}<img src="{{img}}" alt="">{{else}}<i class="fa-solid fa-user"></i>{{/if}}
+                      <span>
+                        <strong>{{name}}</strong>
+                        {{#if isPlayerCharacter}}<small><i class="fa-solid fa-star"></i> Player Character</small>{{else}}{{#if isPlayerOwned}}<small>Player Owned</small>{{/if}}{{/if}}
+                      </span>
+                    </button>
                   {{/each}}
-                </select>
+                  </div>
+                </div>
               </label>
               <div class="dt-radio-lock-status">
                 <span>Required Roll</span>
@@ -767,6 +804,7 @@
                         </span>
                         <span class="dt-radio-broadcast-meta">
                           <b>{{frequencyDisplay}} MHz</b>
+                          <small>Gain {{targetGainDisplay}}</small>
                         </span>
                         <span class="dt-radio-air-state">{{#if enabled}}On Air{{else}}Off Air{{/if}}</span>
                         <i class="fa-solid fa-chevron-down dt-radio-summary-chevron"></i>
@@ -790,9 +828,10 @@
                             <label><span>End Turn (0 = none)</span><input type="number" name="endTurn" min="0" step="1" value="{{endTurn}}"></label>
                             <label><span>Core Signal Range</span><input type="number" name="signalRange" min="0.1" max="10" step="0.1" value="{{signalRange}}"></label>
                             <label><span>Lock Tolerance</span><input type="number" name="lockTolerance" min="0.1" max="2" step="0.1" value="{{lockTolerance}}"></label>
+                            <label><span>Target Gain</span><input type="number" name="targetGain" min="1" max="5" step="0.01" value="{{targetGainDisplay}}"></label>
+                            <label><span>Gain Tolerance</span><input type="number" name="gainTolerance" min="0.01" max="0.5" step="0.01" value="{{gainToleranceDisplay}}"></label>
                             <label><span>Skill Name</span><input type="text" name="skillName" value="{{skillName}}"></label>
-                            <label><span>Fallback Die</span><select name="fallbackDie">{{#each dieOptions}}<option value="{{sides}}" {{#if selected}}selected{{/if}}>d{{sides}}</option>{{/each}}</select></label>
-                            <label><span>Modifier</span><input type="text" inputmode="numeric" name="modifier" value="{{modifier}}" placeholder="+0"></label>
+                            <label><span>Modifier</span><input type="text" inputmode="numeric" name="modifier" value="{{modifierDisplay}}" placeholder="0"></label>
                           </div>
                         </fieldset>
 
