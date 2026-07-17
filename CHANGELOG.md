@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.4
+
+- Changed per-broadcast audio from a post-roll decoded-message one-shot into a Broadcast Tier 3 Override.
+- The override replaces the global Frequency Found / Tier 3 loop only after that broadcast's carrier frequency is acquired.
+- Broadcasts without an override continue using the Receiver's global Tier 3 audio.
+- Removed duplicate audio playback after a successful signal-lock roll, so the broadcast override no longer overlaps the receiver loop.
+- Added a per-broadcast Requires Signal Lock switch. Open broadcasts reveal their full transmission as soon as frequency and Gain are aligned, without actor selection, permission, stabilization, or a SWADE roll.
+- Empty response lists are supported and simply omit response actions from the radio log.
+
 ## 0.2.3
 
 - Added a shared 1.00-5.00 Signal Gain control beside the frequency dial. A signal can stabilize and lock only when both frequency and Gain are aligned.

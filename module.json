@@ -2,7 +2,7 @@
   "id": "swade-dominion-train",
   "title": "SWADE Dominion Train",
   "description": "A dieselpunk train management panel for SWADE Dominion campaigns in Foundry VTT.",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "authors": [
     {
       "name": "UmutcanOrug"
@@ -10,7 +10,7 @@
   ],
   "url": "https://github.com/UmutcanOrug/swade-train-adventure",
   "manifest": "https://github.com/UmutcanOrug/swade-train-adventure/releases/latest/download/module.json",
-  "download": "https://github.com/UmutcanOrug/swade-train-adventure/releases/latest/download/swade-dominion-train-v0.2.3.zip",
+  "download": "https://github.com/UmutcanOrug/swade-train-adventure/releases/latest/download/swade-dominion-train-v0.2.4.zip",
   "readme": "https://github.com/UmutcanOrug/swade-train-adventure/blob/main/README.md",
   "bugs": "https://github.com/UmutcanOrug/swade-train-adventure/issues",
   "changelog": "https://github.com/UmutcanOrug/swade-train-adventure/releases/latest",

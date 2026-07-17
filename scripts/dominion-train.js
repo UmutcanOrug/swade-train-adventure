@@ -596,6 +596,7 @@ function radioBroadcastContext(broadcast) {
     frequencyDisplay: formatRadioFrequency(broadcast.frequency),
     targetGainDisplay: formatRadioGain(broadcast.targetGain),
     gainToleranceDisplay: formatRadioGainTolerance(broadcast.gainTolerance),
+    lockModeLabel: broadcast.requiresLock ? "Signal Lock" : "Open Broadcast",
     modifierDisplay: String(Math.trunc(toSignedNumber(broadcast.modifier, 0))),
     expanded: uiState.expandedRadioBroadcastId === broadcast.id,
     responseLines: serializeRadioResponses(broadcast.responses)
@@ -1083,6 +1084,7 @@ function activateRadioListeners(root) {
         lockTolerance: formData.get("lockTolerance"),
         targetGain: formData.get("targetGain"),
         gainTolerance: formData.get("gainTolerance"),
+        requiresLock: formData.has("requiresLock"),
         source: formData.get("source"),
         startTurn: formData.get("startTurn"),
         endTurn: formData.get("endTurn"),
@@ -1095,6 +1097,12 @@ function activateRadioListeners(root) {
         responseLines: formData.get("responseLines"),
         oneShot: formData.has("oneShot")
       });
+    });
+
+    const lockToggle = form.querySelector("[data-radio-requires-lock]");
+    const lockSettings = form.querySelector("[data-radio-lock-settings]");
+    lockToggle?.addEventListener("change", () => {
+      lockSettings?.classList.toggle("is-open-broadcast", !lockToggle.checked);
     });
   });
 
@@ -1830,11 +1838,12 @@ function requestRadioLock(data, payload, user) {
   ensureRadioPowered(data);
   if (user.isGM || data.radio.permissions[user.id]) throw new Error("You already have permission to lock a signal.");
   if (!payload.stabilized) throw new Error("Hold the carrier steady before requesting a lock.");
-  const actor = radioActorForUser(payload.actorId, user);
   const frequency = normalizeRadioFrequency(payload.frequency);
   const gain = normalizeRadioGain(payload.gain);
   const signal = radioSignalAtFrequency(data, frequency, gain);
   ensureRadioSignalAligned(signal);
+  if (signal.broadcast.requiresLock === false) throw new Error("This is an open broadcast and does not require a signal lock.");
+  const actor = radioActorForUser(payload.actorId, user);
 
   data.radio.frequency = frequency;
   data.radio.gain = gain;
@@ -1895,11 +1904,12 @@ async function performRadioLock(data, payload, user) {
   ensureRadioPowered(data);
   if (!user.isGM && !data.radio.permissions[user.id]) throw new Error("The GM has not granted you signal-lock permission.");
   if (!payload.stabilized) throw new Error("The carrier has not stabilized yet.");
-  const actor = radioActorForUser(payload.actorId, user);
   const frequency = normalizeRadioFrequency(payload.frequency);
   const gain = normalizeRadioGain(payload.gain);
   const signal = radioSignalAtFrequency(data, frequency, gain);
   ensureRadioSignalAligned(signal);
+  if (signal.broadcast.requiresLock === false) throw new Error("This is an open broadcast and does not require a signal-lock roll.");
+  const actor = radioActorForUser(payload.actorId, user);
 
   const attemptLimit = Math.max(0, Math.trunc(toNumber(data.radio.settings.lockAttemptsPerTurn, 2)));
   const attemptsUsed = data.radio.attempts.filter(attempt => attempt.turn === data.currentTurn).length;
@@ -1961,15 +1971,6 @@ async function performRadioLock(data, payload, user) {
 
   await saveWorldData(data, "performRadioLock");
   await createRadioChat(entry, actor);
-  const cue = roll.success ? "found" : "failure";
-  playRadioCue(cue, roll.success ? broadcast.audioUrl : "");
-  game.socket.emit(SOCKET_NAME, {
-    type: "radioCue",
-    cue,
-    audioUrl: roll.success ? broadcast.audioUrl : "",
-    senderId: game.user.id,
-    stamp: Date.now()
-  });
   return true;
 }
 
@@ -2070,6 +2071,7 @@ function radioSignalPresentation(signal, stability = null) {
       strengthLabel: "NO CARRIER",
       snippet: "[STATIC]",
       lockReady: false,
+      requiresLock: true,
       stable: false,
       stabilityProgress: 0,
       stabilityLabel: "SEARCHING",
@@ -2081,8 +2083,12 @@ function radioSignalPresentation(signal, stability = null) {
 
   const strength = Math.round(signal.intensity * 100);
   const partial = signal.broadcast.partialText || deriveRadioPartial(signal.broadcast.fullText);
-  const stable = Boolean(stability?.ready);
-  const stabilityProgress = signal.lockReady ? Math.round(clamp(toNumber(stability?.progress, 0), 0, 1) * 100) : 0;
+  const requiresLock = signal.broadcast.requiresLock !== false;
+  const openReady = !requiresLock && signal.lockReady;
+  const stable = openReady || Boolean(stability?.ready);
+  const stabilityProgress = openReady
+    ? 100
+    : signal.lockReady ? Math.round(clamp(toNumber(stability?.progress, 0), 0, 1) * 100) : 0;
   const gainStatusLabel = !signal.frequencyReady
     ? "NO CARRIER"
     : signal.gainReady
@@ -2090,31 +2096,38 @@ function radioSignalPresentation(signal, stability = null) {
       : signal.gainDirection < 0 ? "GAIN LOW" : "GAIN HIGH";
   return {
     strength,
-    strengthLabel: stable
-      ? "SIGNAL STABLE"
-      : signal.lockReady
-        ? "HOLD STEADY"
-        : signal.frequencyReady
-          ? "CARRIER ACQUIRED"
-          : strength >= 65 ? "STRONG CARRIER" : strength >= 30 ? "WEAK CARRIER" : "TRACE SIGNAL",
-    snippet: revealRadioPartial(partial, signal.intensity),
+    strengthLabel: openReady
+      ? "OPEN CHANNEL"
+      : stable
+        ? "SIGNAL STABLE"
+        : signal.lockReady
+          ? "HOLD STEADY"
+          : signal.frequencyReady
+            ? "CARRIER ACQUIRED"
+            : strength >= 65 ? "STRONG CARRIER" : strength >= 30 ? "WEAK CARRIER" : "TRACE SIGNAL",
+    snippet: openReady ? signal.broadcast.fullText : revealRadioPartial(partial, signal.intensity),
     lockReady: signal.lockReady,
+    requiresLock,
     frequencyReady: signal.frequencyReady,
     gainReady: signal.gainReady,
     gainStatusLabel,
     gainClarity: Math.round(signal.gainClarity * 100),
     stable,
     stabilityProgress,
-    stabilityLabel: stable
-      ? "LOCK READY"
-      : signal.lockReady
-        ? `STABILIZING ${stabilityProgress}%`
-        : signal.frequencyReady ? "GAIN ALIGNMENT REQUIRED" : "FINE TUNE REQUIRED",
-    skillLabel: stable
-      ? `${signal.broadcast.skillName} ${formatSigned(signal.broadcast.modifier)}`
-      : signal.lockReady
-        ? "Hold both controls steady"
-        : signal.frequencyReady ? "Adjust signal gain" : "Tune closer to identify the carrier"
+    stabilityLabel: openReady
+      ? "OPEN BROADCAST"
+      : stable
+        ? "LOCK READY"
+        : signal.lockReady
+          ? `STABILIZING ${stabilityProgress}%`
+          : signal.frequencyReady ? "GAIN ALIGNMENT REQUIRED" : "FINE TUNE REQUIRED",
+    skillLabel: !requiresLock
+      ? (openReady ? "No signal lock required" : "Align the public carrier")
+      : stable
+        ? `${signal.broadcast.skillName} ${formatSigned(signal.broadcast.modifier)}`
+        : signal.lockReady
+          ? "Hold both controls steady"
+          : signal.frequencyReady ? "Adjust signal gain" : "Tune closer to identify the carrier"
   };
 }
 
@@ -2124,6 +2137,7 @@ function radioPoweredOffPresentation() {
     strengthLabel: "RECEIVER OFF",
     snippet: "Receiver is currently powered off.",
     lockReady: false,
+    requiresLock: true,
     stable: false,
     stabilityProgress: 0,
     stabilityLabel: "POWER OFF",
@@ -2305,17 +2319,22 @@ function updateRadioReceiverDom(root, frequency = null, gain = null) {
   if (stabilityLabel) stabilityLabel.textContent = presentation.stabilityLabel;
 
   const actorSelect = receiver.querySelector("[name='radioActorId']");
-  if (actorSelect) actorSelect.disabled = !poweredOn;
+  const requiresLock = presentation.requiresLock !== false;
+  if (actorSelect) actorSelect.disabled = !poweredOn || !requiresLock;
   const actorSearch = receiver.querySelector("[data-radio-actor-search]");
-  if (actorSearch) actorSearch.disabled = !poweredOn;
+  if (actorSearch) actorSearch.disabled = !poweredOn || !requiresLock;
   if (!poweredOn) {
     const actorResults = receiver.querySelector("[data-radio-actor-results]");
     if (actorResults) actorResults.hidden = true;
   }
   const actorSelected = Boolean(actorSelect?.value);
   receiver.querySelectorAll("[data-perform-radio-lock], [data-request-radio-lock]").forEach(button => {
-    button.disabled = !poweredOn || !presentation.stable || !actorSelected || button.dataset.requestPending === "true";
+    button.disabled = !poweredOn || !requiresLock || !presentation.stable || !actorSelected || button.dataset.requestPending === "true";
   });
+  const lockRow = receiver.querySelector("[data-radio-lock-row]");
+  if (lockRow) lockRow.classList.toggle("is-open-broadcast", !requiresLock);
+  const rollLabel = receiver.querySelector("[data-radio-roll-label]");
+  if (rollLabel) rollLabel.textContent = requiresLock ? "Required Roll" : "Open Broadcast";
   receiver.classList.toggle("is-powered-off", !poweredOn);
   receiver.classList.toggle("is-signal", Boolean(signal));
   receiver.classList.toggle("is-carrier-acquired", Boolean(signal?.frequencyReady));
@@ -2326,6 +2345,16 @@ function updateRadioReceiverDom(root, frequency = null, gain = null) {
 }
 
 function radioStabilityAt(signal, frequency, gain, holdSeconds) {
+  if (signal?.broadcast?.requiresLock === false) {
+    resetRadioStability();
+    return {
+      ready: Boolean(signal.lockReady),
+      progress: signal.lockReady ? 1 : 0,
+      elapsedMs: 0,
+      requiredMs: 0
+    };
+  }
+
   if (!signal?.lockReady) {
     resetRadioStability();
     return { ready: false, progress: 0, elapsedMs: 0 };
@@ -2418,11 +2447,19 @@ function syncRadioAmbient(data, signal, stable = false) {
   const sources = {
     noise: data.radio.settings.noiseSoundUrl,
     approach: data.radio.settings.approachSoundUrl,
-    found: data.radio.settings.foundSoundUrl
+    found: radioTier3Source(data, signal)
   };
 
   for (const [kind, source] of Object.entries(sources)) ensureRadioAmbientTrack(kind, source);
   crossfadeRadioTracks(targets, 450);
+}
+
+function radioTier3Source(data, signal) {
+  if (signal?.frequencyReady) {
+    const override = cleanString(signal.broadcast?.audioUrl);
+    if (override) return override;
+  }
+  return cleanString(data.radio.settings.foundSoundUrl);
 }
 
 async function ensureRadioAmbientTrack(kind, source) {
@@ -3729,6 +3766,7 @@ function defaultRadioBroadcast(index = 0) {
     source: "Local / Unknown",
     startTurn: 1,
     endTurn: 0,
+    requiresLock: true,
     skillName: "Electronics",
     modifier: 0,
     partialText: "Fort Veyr ... western line ... do not approach",
@@ -4003,6 +4041,7 @@ function normalizeRadioBroadcast(item) {
     source: cleanString(item?.source) || "Unknown",
     startTurn: Math.max(1, Math.trunc(toNumber(item?.startTurn, 1))),
     endTurn: Math.max(0, Math.trunc(toNumber(item?.endTurn, 0))),
+    requiresLock: item?.requiresLock === undefined ? true : Boolean(item.requiresLock),
     skillName: cleanString(item?.skillName) || "Electronics",
     modifier: Math.trunc(toSignedNumber(item?.modifier, 0)),
     partialText: cleanString(item?.partialText),

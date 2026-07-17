@@ -48,7 +48,7 @@ const context = {
 };
 context.globalThis = context;
 vm.createContext(context);
-vm.runInContext(`${source}\n;globalThis.__radioTest = { normalizeRadioBroadcast, radioSignalAtFrequency, radioSignalPresentation, radioPoweredOffPresentation, ensureRadioPowered, ensureRadioSignalAligned, parseRadioResponses, normalizeRadioFrequency, normalizeRadioGain, radioDialAngle, radioActorOptions };`, context);
+vm.runInContext(`${source}\n;globalThis.__radioTest = { normalizeRadioBroadcast, radioSignalAtFrequency, radioSignalPresentation, radioPoweredOffPresentation, ensureRadioPowered, ensureRadioSignalAligned, parseRadioResponses, normalizeRadioFrequency, normalizeRadioGain, radioDialAngle, radioActorOptions, radioTier3Source };`, context);
 
 const radio = context.__radioTest;
 
@@ -56,7 +56,12 @@ function radioData(broadcast) {
   return {
     currentTurn: 5,
     route: { biomeId: "tundra" },
-    radio: { poweredOn: true, gain: 3, broadcasts: [radio.normalizeRadioBroadcast(broadcast)] }
+    radio: {
+      poweredOn: true,
+      gain: 3,
+      settings: { foundSoundUrl: "modules/swade-dominion-train/sounds/radio/default-tier-3.mp3" },
+      broadcasts: [radio.normalizeRadioBroadcast(broadcast)]
+    }
   };
 }
 
@@ -206,6 +211,59 @@ test("gain provides no clue before the carrier frequency is acquired", () => {
   assert.equal(radio.radioSignalPresentation(high).gainStatusLabel, "NO CARRIER");
 });
 
+test("broadcast audio replaces Tier 3 only after its carrier is acquired", () => {
+  const data = radioData({
+    id: "voice-signal",
+    enabled: true,
+    frequency: 96.4,
+    signalRange: 2,
+    lockTolerance: 0.2,
+    targetGain: 3,
+    audioUrl: "worlds/dominion/audio/fort-veyr-message.mp3"
+  });
+  const trace = radio.radioSignalAtFrequency(data, 95.5, 3);
+  const carrier = radio.radioSignalAtFrequency(data, 96.4, 3);
+
+  assert.equal(
+    radio.radioTier3Source(data, trace),
+    "modules/swade-dominion-train/sounds/radio/default-tier-3.mp3"
+  );
+  assert.equal(radio.radioTier3Source(data, carrier), "worlds/dominion/audio/fort-veyr-message.mp3");
+
+  carrier.broadcast.audioUrl = "";
+  assert.equal(
+    radio.radioTier3Source(data, carrier),
+    "modules/swade-dominion-train/sounds/radio/default-tier-3.mp3"
+  );
+});
+
+test("open broadcasts reveal their full transmission without a lock roll", () => {
+  const data = radioData({
+    id: "public-station",
+    enabled: true,
+    frequency: 101.2,
+    signalRange: 1.5,
+    lockTolerance: 0.2,
+    targetGain: 4.2,
+    gainTolerance: 0.05,
+    requiresLock: false,
+    partialText: "Auran Central public service",
+    fullText: "Auran Central public service bulletin and scheduled music."
+  });
+  const misaligned = radio.radioSignalAtFrequency(data, 101.2, 3);
+  const aligned = radio.radioSignalAtFrequency(data, 101.2, 4.2);
+  const tuning = radio.radioSignalPresentation(misaligned);
+  const open = radio.radioSignalPresentation(aligned);
+
+  assert.equal(aligned.broadcast.requiresLock, false);
+  assert.equal(tuning.requiresLock, false);
+  assert.doesNotMatch(tuning.snippet, /scheduled music/);
+  assert.equal(open.stable, true);
+  assert.equal(open.stabilityLabel, "OPEN BROADCAST");
+  assert.equal(open.skillLabel, "No signal lock required");
+  assert.equal(open.snippet, "Auran Central public service bulletin and scheduled music.");
+});
+
 test("legacy invalid modifiers become zero and radio fallback dice are discarded", () => {
   const broadcast = radio.normalizeRadioBroadcast({
     id: "legacy",
@@ -241,4 +299,5 @@ test("GM response lines retain labels and immediate outcomes", () => {
   assert.equal(responses.length, 2);
   assert.equal(responses[0].label, "Request route");
   assert.equal(responses[0].outcome, "Northern line opens");
+  assert.deepEqual(Array.from(radio.parseRadioResponses("")), []);
 });

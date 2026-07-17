@@ -600,8 +600,8 @@
               <p data-radio-transcript>{{radio.signal.snippet}}</p>
             </div>
 
-            <div class="dt-radio-lock-row">
-              <label>
+            <div class="dt-radio-lock-row {{#unless radio.signal.requiresLock}}is-open-broadcast{{/unless}}" data-radio-lock-row>
+              <label data-radio-lock-only>
                 <span>Operator Actor</span>
                 <div class="dt-radio-actor-picker" data-radio-actor-picker>
                   <input type="search" data-radio-actor-search placeholder="Search actors..." autocomplete="off" role="combobox" aria-expanded="false" aria-controls="dt-radio-actor-results" {{#unless radio.poweredOn}}disabled{{/unless}}>
@@ -620,18 +620,18 @@
                 </div>
               </label>
               <div class="dt-radio-lock-status">
-                <span>Required Roll</span>
+                <span data-radio-roll-label>{{#if radio.signal.requiresLock}}Required Roll{{else}}Open Broadcast{{/if}}</span>
                 <strong data-radio-skill>{{radio.signal.skillLabel}}</strong>
                 <div class="dt-radio-stability-track"><span data-radio-stability-fill style="width: {{radio.signal.stabilityProgress}}%;"></span></div>
                 <small data-radio-stability-label>{{radio.signal.stabilityLabel}}</small>
               </div>
               {{#if radio.canLock}}
-                <button type="button" class="dt-primary" data-perform-radio-lock disabled title="Lock Signal">
+                <button type="button" class="dt-primary" data-radio-lock-only data-perform-radio-lock disabled title="Lock Signal">
                   <i class="fa-solid fa-tower-broadcast"></i>
                   <span>Lock Signal</span>
                 </button>
               {{else}}
-                <button type="button" data-request-radio-lock data-request-pending="{{radio.requestPending}}" disabled title="Request GM Lock Permission">
+                <button type="button" data-radio-lock-only data-request-radio-lock data-request-pending="{{radio.requestPending}}" disabled title="Request GM Lock Permission">
                   <i class="fa-solid fa-hand"></i>
                   <span>{{#if radio.requestPending}}Request Pending{{else}}Request Lock{{/if}}</span>
                 </button>
@@ -804,7 +804,7 @@
                         </span>
                         <span class="dt-radio-broadcast-meta">
                           <b>{{frequencyDisplay}} MHz</b>
-                          <small>Gain {{targetGainDisplay}}</small>
+                          <small>Gain {{targetGainDisplay}} / {{lockModeLabel}}</small>
                         </span>
                         <span class="dt-radio-air-state">{{#if enabled}}On Air{{else}}Off Air{{/if}}</span>
                         <i class="fa-solid fa-chevron-down dt-radio-summary-chevron"></i>
@@ -821,17 +821,18 @@
                           </div>
                         </fieldset>
 
-                        <fieldset>
+                        <fieldset data-radio-lock-settings class="{{#unless requiresLock}}is-open-broadcast{{/unless}}">
                           <legend>Availability &amp; Lock</legend>
                           <div class="dt-radio-broadcast-grid">
+                            <label class="dt-check-inline dt-wide"><input type="checkbox" name="requiresLock" data-radio-requires-lock {{checked requiresLock}}><span>Requires Signal Lock</span></label>
                             <label><span>Start Turn</span><input type="number" name="startTurn" min="1" step="1" value="{{startTurn}}"></label>
                             <label><span>End Turn (0 = none)</span><input type="number" name="endTurn" min="0" step="1" value="{{endTurn}}"></label>
                             <label><span>Core Signal Range</span><input type="number" name="signalRange" min="0.1" max="10" step="0.1" value="{{signalRange}}"></label>
                             <label><span>Lock Tolerance</span><input type="number" name="lockTolerance" min="0.1" max="2" step="0.1" value="{{lockTolerance}}"></label>
                             <label><span>Target Gain</span><input type="number" name="targetGain" min="1" max="5" step="0.01" value="{{targetGainDisplay}}"></label>
                             <label><span>Gain Tolerance</span><input type="number" name="gainTolerance" min="0.01" max="0.5" step="0.01" value="{{gainToleranceDisplay}}"></label>
-                            <label><span>Skill Name</span><input type="text" name="skillName" value="{{skillName}}"></label>
-                            <label><span>Modifier</span><input type="text" inputmode="numeric" name="modifier" value="{{modifierDisplay}}" placeholder="0"></label>
+                            <label data-radio-lock-config><span>Skill Name</span><input type="text" name="skillName" value="{{skillName}}"></label>
+                            <label data-radio-lock-config><span>Modifier</span><input type="text" inputmode="numeric" name="modifier" value="{{modifierDisplay}}" placeholder="0"></label>
                           </div>
                         </fieldset>
 
@@ -842,15 +843,15 @@
                             <label><span>Full Transmission</span><textarea name="fullText" rows="4">{{fullText}}</textarea></label>
                             <label><span>Raise Intelligence</span><textarea name="raiseText" rows="2">{{raiseText}}</textarea></label>
                             <label class="dt-radio-sound-field">
-                              <span>Decoded Voice / Message Audio</span>
+                              <span>Broadcast Tier 3 Override</span>
                               <div class="dt-radio-audio-row">
-                                <input type="text" name="audioUrl" value="{{audioUrl}}" placeholder="Foundry audio path">
-                                <button type="button" data-radio-file-picker="audioUrl" title="Choose Message Audio"><i class="fa-solid fa-folder-open"></i></button>
-                                <button type="button" data-radio-test-sound="audioUrl" title="Test Message Audio"><i class="fa-solid fa-play"></i></button>
+                                <input type="text" name="audioUrl" value="{{audioUrl}}" placeholder="Optional Foundry audio path">
+                                <button type="button" data-radio-file-picker="audioUrl" title="Choose Tier 3 Override"><i class="fa-solid fa-folder-open"></i></button>
+                                <button type="button" data-radio-test-sound="audioUrl" title="Test Tier 3 Override"><i class="fa-solid fa-play"></i></button>
                               </div>
                             </label>
                             <label><span>Responses (label | immediate result)</span><textarea name="responseLines" rows="4">{{responseLines}}</textarea></label>
-                            <label class="dt-check-inline"><input type="checkbox" name="oneShot" {{checked oneShot}}><span>Go off air after a successful lock</span></label>
+                            <label class="dt-check-inline" data-radio-lock-config><input type="checkbox" name="oneShot" {{checked oneShot}}><span>Go off air after a successful lock</span></label>
                           </div>
                         </fieldset>
 

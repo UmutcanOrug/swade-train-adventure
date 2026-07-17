@@ -1194,6 +1194,15 @@
   min-width: 0;
 }
 
+.dt-radio-lock-row.is-open-broadcast {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.dt-radio-lock-row.is-open-broadcast [data-radio-lock-only],
+[data-radio-lock-settings].is-open-broadcast [data-radio-lock-config] {
+  display: none;
+}
+
 .dt-radio-actor-picker {
   position: relative;
   min-width: 0;
