@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2
+
+- Added a per-user Mute control that stops receiver loops and decoded message audio without interrupting tuning or stabilization.
+- Added a GM-only receiver Power control shared by the whole table.
+- Powered-off receivers stop all audio, reject frequency changes, signal locks, lock requests, and transmitted responses, and display a clear offline warning.
+- Removed biome restrictions from radio broadcasts. On Air state and optional turn windows now control broadcast availability.
+- Migrated legacy biome-limited broadcasts into biome-independent broadcasts automatically.
+
 ## 0.2.1
 
 - Replaced the frequency slider with a mouse-driven rotary tuning dial. Mouse wheel and arrow keys provide fine tuning.

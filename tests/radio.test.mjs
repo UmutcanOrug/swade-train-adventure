@@ -48,7 +48,7 @@ const context = {
 };
 context.globalThis = context;
 vm.createContext(context);
-vm.runInContext(`${source}\n;globalThis.__radioTest = { normalizeRadioBroadcast, radioSignalAtFrequency, radioSignalPresentation, parseRadioResponses, normalizeRadioFrequency, radioDialAngle };`, context);
+vm.runInContext(`${source}\n;globalThis.__radioTest = { normalizeRadioBroadcast, radioSignalAtFrequency, radioSignalPresentation, radioPoweredOffPresentation, ensureRadioPowered, parseRadioResponses, normalizeRadioFrequency, radioDialAngle };`, context);
 
 const radio = context.__radioTest;
 
@@ -56,7 +56,7 @@ function radioData(broadcast) {
   return {
     currentTurn: 5,
     route: { biomeId: "tundra" },
-    radio: { broadcasts: [radio.normalizeRadioBroadcast(broadcast)] }
+    radio: { poweredOn: true, broadcasts: [radio.normalizeRadioBroadcast(broadcast)] }
   };
 }
 
@@ -76,7 +76,6 @@ test("a nearby carrier reveals only its partial transmission", () => {
     frequency: 96.4,
     signalRange: 2,
     lockTolerance: 0.2,
-    biomeId: "tundra",
     startTurn: 1,
     endTurn: 0,
     partialText: "Fort Veyr western line do not approach",
@@ -97,7 +96,6 @@ test("a feathered trace appears before the core signal range", () => {
     frequency: 96.4,
     signalRange: 1,
     lockTolerance: 0.2,
-    biomeId: "tundra",
     partialText: "Fort Veyr western line do not approach"
   });
   const signal = radio.radioSignalAtFrequency(data, 99.2);
@@ -108,24 +106,40 @@ test("a feathered trace appears before the core signal range", () => {
   assert.match(presentation.snippet, /Fort/);
 });
 
-test("exact tuning enables lock only in the configured biome and turn window", () => {
+test("radio broadcasts ignore biome and respect their turn window", () => {
   const data = radioData({
     id: "signal",
     enabled: true,
     frequency: 96.4,
     signalRange: 1.5,
     lockTolerance: 0.2,
-    biomeId: "tundra",
+    biomeId: "desert",
     startTurn: 3,
     endTurn: 7,
     fullText: "Decoded transmission."
   });
   assert.equal(radio.radioSignalAtFrequency(data, 96.4)?.lockReady, true);
   data.route.biomeId = "desert";
-  assert.equal(radio.radioSignalAtFrequency(data, 96.4), null);
-  data.route.biomeId = "tundra";
+  assert.equal(radio.radioSignalAtFrequency(data, 96.4)?.lockReady, true);
   data.currentTurn = 8;
   assert.equal(radio.radioSignalAtFrequency(data, 96.4), null);
+});
+
+test("a powered-off receiver exposes no carrier", () => {
+  const data = radioData({
+    id: "signal",
+    enabled: true,
+    frequency: 96.4,
+    signalRange: 1.5,
+    lockTolerance: 0.2,
+    startTurn: 1,
+    endTurn: 0
+  });
+  assert.ok(radio.radioSignalAtFrequency(data, 96.4));
+  data.radio.poweredOn = false;
+  assert.equal(radio.radioSignalAtFrequency(data, 96.4), null);
+  assert.throws(() => radio.ensureRadioPowered(data), /currently powered off/);
+  assert.equal(radio.radioPoweredOffPresentation().stabilityLabel, "POWER OFF");
 });
 
 test("exact tuning must stabilize before the roll becomes available", () => {
@@ -135,7 +149,6 @@ test("exact tuning must stabilize before the roll becomes available", () => {
     frequency: 96.4,
     signalRange: 1.5,
     lockTolerance: 0.2,
-    biomeId: "tundra",
     skillName: "Electronics",
     modifier: 1
   });

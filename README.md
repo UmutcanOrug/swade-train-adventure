@@ -19,8 +19,9 @@ Foundry VTT v13 icin SWADE Dominion tren yonetim modulu.
 - Population, Storage, Fuel ve Special wagon rolleri
 - Fuel icin Fuel Wagon cap, Food/Water/Amenities icin ortak Storage Wagon cap
 - Mouse ile cevrilen 80.0-120.0 MHz Radio alicisi ve tum acik oyuncu panellerinde canli frekans senkronu
-- GM yayin editoru, biome/tur araligi, parca/tam mesaj, SWADE skill zari ve Raise bilgisi
+- GM yayin editoru, tur araligi, parca/tam mesaj, SWADE skill zari ve Raise bilgisi
 - GM signal-lock izinleri, oyuncu lock talebi, Radio Log ve yayin cevaplari
+- Kullaniciya ozel Mute ve butun masa icin GM kontrollu receiver Power dugmeleri
 - Yerlesik Tier 1 Static, Tier 2 Close ve Tier 3 Understandable sesleriyle yeniden baslamayan uc katmanli crossfade sistemi
 - Advance Turn otomasyonu
 - GM tam yetki; oyuncular icin kontrollu Radio tuning, lock talebi ve izinli signal lock
@@ -61,6 +62,8 @@ Wagon cap sistemi: Population Wagon capacity toplam pop cap verir. Fuel Wagon ca
 
 Radio sekmesinde tum oyuncular ortak frekans dugmesini mouse ile cevirir; mouse wheel ve yon tuslari ince ayar yapar. Radio sekmesi acik olan diger oyuncular degisimi canli gorur. Tasiyiciya yaklasirken zayif sinyal izi ve parca mesaj kelimeleri kademeli belirir. Dogru frekansta Lock Signal acilmadan once alici GM'in belirledigi sure boyunca sabit tutulur. Lock Signal zari yalnizca GM veya GM'in Signal-Lock Permission tiki verdigi oyuncu tarafindan atilabilir. Izni olmayan oyuncu aktorunu secip GM'e lock talebi gonderir. Basarili SWADE zari tam mesaji, Raise ise ek istihbarati acar.
 
-GM Radio Control bolumu Broadcasts, Receiver ve Access sekmelerine ayrilir. Yayinlar kapali ozet satirlarinda On Air durumu, frekans, biome ve source bilgisiyle listelenir; secilen yayin acilarak duzenlenir. Receiver sekmesinden lock deneme sayisi, stabilizasyon suresi, ses seviyesi ve uc loop dosyasi ayarlanir. Mod Tier 1 Static, Tier 2 Close ve Tier 3 Understandable seslerini varsayilan olarak getirir; klasor dugmeleri Foundry V13 FilePicker'i acar. Uc loop Radio sekmesi acikken birlikte calisir; frekans degistikce ses seviyeleri birbirine gecerek degisir ve dosyalar bastan baslamaz. Radio sekmesinden cikilinca butun radyo sesleri durur.
+Mute dugmesi yalnizca basan kullanicinin radyo seslerini kapatir; frekans ve stabilizasyon ilerlemeye devam eder. GM Power Off yaptiginda receiver butun masa icin kapanir: sesler durur, frekans degistirilemez, lock veya response gonderilemez ve receiver offline uyarisi gosterir.
+
+GM Radio Control bolumu Broadcasts, Receiver ve Access sekmelerine ayrilir. Yayinlar kapali ozet satirlarinda On Air durumu, frekans ve source bilgisiyle listelenir; secilen yayin acilarak duzenlenir. Radio yayinlari biome ile sinirlanmaz; On Air tiki ve istege bagli turn araligi yayinin ne zaman alinabilecegini belirler. Receiver sekmesinden lock deneme sayisi, stabilizasyon suresi, ses seviyesi ve uc loop dosyasi ayarlanir. Mod Tier 1 Static, Tier 2 Close ve Tier 3 Understandable seslerini varsayilan olarak getirir; klasor dugmeleri Foundry V13 FilePicker'i acar. Uc loop Radio sekmesi acikken birlikte calisir; frekans degistikce ses seviyeleri birbirine gecerek degisir ve dosyalar bastan baslamaz. Radio sekmesinden cikilinca butun radyo sesleri durur.
 
 Hazir biome event taslaklari `docs/scavenge-biome-events.txt` dosyasinda tutulur.

@@ -500,15 +500,34 @@
               <h2>Dominion Radio</h2>
               <p>Shared receiver / Turn {{summary.currentTurn}} / Lock attempts {{radio.attemptsDisplay}}</p>
             </div>
-            {{#if isGM}}
-              <button type="button" data-reset-radio-attempts title="Reset Lock Attempts">
-                <i class="fa-solid fa-rotate-left"></i>
-                <span>Reset Attempts</span>
+            <div class="dt-radio-command-actions">
+              <button type="button" class="dt-radio-mute-button {{#if radio.muted}}is-active{{/if}}" data-radio-mute aria-pressed="{{radio.muted}}" title="{{#if radio.muted}}Unmute Receiver Audio{{else}}Mute Receiver Audio{{/if}}">
+                <i class="fa-solid {{#if radio.muted}}fa-volume-xmark{{else}}fa-volume-high{{/if}}"></i>
+                <span>{{#if radio.muted}}Unmute{{else}}Mute{{/if}}</span>
               </button>
-            {{/if}}
+              {{#if isGM}}
+                <button type="button" class="{{#if radio.poweredOn}}dt-danger-button{{else}}dt-primary{{/if}}" data-toggle-radio-power data-radio-powered="{{radio.poweredOn}}" title="{{#if radio.poweredOn}}Power Off Receiver{{else}}Power On Receiver{{/if}}">
+                  <i class="fa-solid fa-power-off"></i>
+                  <span>{{#if radio.poweredOn}}Power Off{{else}}Power On{{/if}}</span>
+                </button>
+                <button type="button" data-reset-radio-attempts title="Reset Lock Attempts">
+                  <i class="fa-solid fa-rotate-left"></i>
+                  <span>Reset Attempts</span>
+                </button>
+              {{/if}}
+            </div>
           </div>
 
-          <section class="dt-radio-receiver" data-radio-receiver>
+          <section class="dt-radio-receiver {{#unless radio.poweredOn}}is-powered-off{{/unless}}" data-radio-receiver data-radio-powered="{{radio.poweredOn}}">
+            {{#unless radio.poweredOn}}
+              <div class="dt-radio-power-warning" role="status">
+                <i class="fa-solid fa-power-off"></i>
+                <div>
+                  <strong>Receiver is currently powered off.</strong>
+                  <span>Only the GM can restore receiver power.</span>
+                </div>
+              </div>
+            {{/unless}}
             <div class="dt-radio-console">
               <div class="dt-radio-display-bank">
                 <div class="dt-radio-readout">
@@ -535,12 +554,13 @@
                     aria-valuenow="{{radio.frequency}}"
                     title="Turn to tune. Mouse wheel and arrow keys fine tune."
                     style="--dial-angle: {{radio.dialAngle}}deg;"
+                    {{#unless radio.poweredOn}}disabled{{/unless}}
                   >
                     <span class="dt-radio-dial-pointer"></span>
                     <span class="dt-radio-dial-cap"><i class="fa-solid fa-radio"></i></span>
                   </button>
                 </div>
-                <input class="dt-radio-frequency-input" type="range" min="{{radio.minFrequency}}" max="{{radio.maxFrequency}}" step="{{radio.frequencyStep}}" value="{{radio.frequencyRaw}}" data-radio-frequency tabindex="-1" aria-hidden="true">
+                <input class="dt-radio-frequency-input" type="range" min="{{radio.minFrequency}}" max="{{radio.maxFrequency}}" step="{{radio.frequencyStep}}" value="{{radio.frequencyRaw}}" data-radio-frequency tabindex="-1" aria-hidden="true" {{#unless radio.poweredOn}}disabled{{/unless}}>
                 <div class="dt-radio-scale" aria-hidden="true">
                   <span>80</span><span>90</span><span>100</span><span>110</span><span>120</span>
                 </div>
@@ -555,7 +575,7 @@
             <div class="dt-radio-lock-row">
               <label>
                 <span>Operator Actor</span>
-                <select name="radioActorId">
+                <select name="radioActorId" {{#unless radio.poweredOn}}disabled{{/unless}}>
                   <option value="">Select actor</option>
                   {{#each radioActors}}
                     <option value="{{id}}">{{name}}</option>
@@ -609,7 +629,7 @@
                     {{#if canRespond}}
                       <footer class="dt-radio-responses">
                         {{#each responses}}
-                          <button type="button" data-radio-log="{{../id}}" data-radio-response="{{index}}" title="Transmit Response">
+                          <button type="button" data-radio-log="{{../id}}" data-radio-response="{{index}}" title="Transmit Response" {{#unless @root.radio.poweredOn}}disabled{{/unless}}>
                             <i class="fa-solid fa-paper-plane"></i><span>{{label}}</span>
                           </button>
                         {{/each}}
@@ -747,7 +767,6 @@
                         </span>
                         <span class="dt-radio-broadcast-meta">
                           <b>{{frequencyDisplay}} MHz</b>
-                          <small>{{biomeName}}</small>
                         </span>
                         <span class="dt-radio-air-state">{{#if enabled}}On Air{{else}}Off Air{{/if}}</span>
                         <i class="fa-solid fa-chevron-down dt-radio-summary-chevron"></i>
@@ -760,8 +779,7 @@
                             <label class="dt-wide"><span>Broadcast Name</span><input type="text" name="title" value="{{title}}"></label>
                             <label><span>Frequency</span><input type="number" name="frequency" min="80" max="120" step="0.1" value="{{frequencyDisplay}}"></label>
                             <label><span>Source / Faction</span><input type="text" name="source" value="{{source}}"></label>
-                            <label><span>Biome</span><select name="biomeId">{{#each biomeOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select></label>
-                            <label class="dt-radio-on-air-toggle"><input type="checkbox" name="enabled" {{checked enabled}}><span>On Air</span></label>
+                            <label class="dt-radio-on-air-toggle dt-wide"><input type="checkbox" name="enabled" {{checked enabled}}><span>On Air</span></label>
                           </div>
                         </fieldset>
 
