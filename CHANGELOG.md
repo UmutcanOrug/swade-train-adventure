@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.6
+
+- Coalesced rapid frequency and Signal Gain changes so each control keeps only its latest pending world-data write while live receiver movement remains synchronized for all viewers.
+- Prevented mouse-wheel Gain adjustments from flooding the responsible GM with overlapping save requests and producing repeated action-confirmation warnings.
+- Ignored stale action errors that arrive after their original request has already timed out.
+- Prevented repeated panel renders from starting duplicate shared broadcast-playback synchronization requests.
+
 ## 0.2.5
 
 - Broadcast Tier 3 Override audio now creates one shared random playback position each time the receiver reconnects to that broadcast.

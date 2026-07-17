@@ -4,6 +4,7 @@ const CLIENT_SETTING = "clientState";
 const SOCKET_NAME = `module.${MODULE_ID}`;
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/train-panel.hbs`;
 const ACTION_CONFIRM_TIMEOUT_MS = 6000;
+const ACTION_CONFIRM_WARNING_COOLDOWN_MS = 6000;
 const CURRENT_EVENT_SCHEMA_VERSION = 5;
 const RADIO_MIN_FREQUENCY = 80;
 const RADIO_MAX_FREQUENCY = 120;
@@ -125,10 +126,13 @@ let liveRadioTunedBy = "";
 let liveRadioStamp = 0;
 let radioBroadcastTimer = null;
 let queuedRadioFrequency = null;
-let radioTuneCommitTimer = null;
 let radioGainBroadcastTimer = null;
 let queuedRadioGain = null;
-let radioGainCommitTimer = null;
+let radioPlaybackSyncPromise = null;
+let lastActionConfirmationWarning = 0;
+const radioControlCommitQueue = createLatestActionQueue((action, payload) => (
+  sendAction(action, payload, { suppressTimeoutWarning: true })
+));
 const radioAmbientTracks = new Map();
 const radioOneShotAudio = new Map();
 let radioStabilityTimer = null;
@@ -1196,8 +1200,10 @@ function activateRadioDial(receiver, slider) {
     queueRadioFrequencyBroadcast(frequency);
     return frequency;
   };
-  const commitFrequency = async () => {
-    await sendAction("tuneRadio", { frequency: normalizeRadioFrequency(slider.value) });
+  const commitFrequency = () => {
+    radioControlCommitQueue.queue("tuneRadio", {
+      frequency: normalizeRadioFrequency(slider.value)
+    }, 0);
   };
   const pointerAngle = event => {
     const rect = dial.getBoundingClientRect();
@@ -1232,33 +1238,29 @@ function activateRadioDial(receiver, slider) {
     drag.angle = nextAngle;
   });
 
-  const finishDrag = async event => {
+  const finishDrag = event => {
     if (!drag || drag.pointerId !== event.pointerId) return;
     drag = null;
     dial.classList.remove("is-turning");
     dial.releasePointerCapture?.(event.pointerId);
-    await commitFrequency();
+    commitFrequency();
   };
   dial.addEventListener("pointerup", finishDrag);
   dial.addEventListener("pointercancel", finishDrag);
 
-  dial.addEventListener("wheel", async event => {
+  dial.addEventListener("wheel", event => {
     event.preventDefault();
     const step = event.shiftKey ? 1 : RADIO_FREQUENCY_STEP;
     const frequency = applyFrequency(toNumber(slider.value, RADIO_DEFAULT_FREQUENCY) + (event.deltaY < 0 ? step : -step));
-    if (radioTuneCommitTimer) clearTimeout(radioTuneCommitTimer);
-    radioTuneCommitTimer = setTimeout(() => {
-      radioTuneCommitTimer = null;
-      sendAction("tuneRadio", { frequency });
-    }, 180);
+    radioControlCommitQueue.queue("tuneRadio", { frequency }, 180);
   }, { passive: false });
 
-  dial.addEventListener("keydown", async event => {
+  dial.addEventListener("keydown", event => {
     const direction = ["ArrowRight", "ArrowUp"].includes(event.key) ? 1 : ["ArrowLeft", "ArrowDown"].includes(event.key) ? -1 : 0;
     if (!direction) return;
     event.preventDefault();
     applyFrequency(toNumber(slider.value, RADIO_DEFAULT_FREQUENCY) + direction * (event.shiftKey ? 1 : RADIO_FREQUENCY_STEP));
-    await commitFrequency();
+    commitFrequency();
   });
 }
 
@@ -1272,17 +1274,13 @@ function activateRadioGain(receiver, slider) {
     queueRadioGainBroadcast(gain);
     return gain;
   };
-  const commitGain = async gain => {
-    if (radioGainCommitTimer) clearTimeout(radioGainCommitTimer);
-    radioGainCommitTimer = null;
-    await sendAction("adjustRadioGain", { gain: normalizeRadioGain(gain ?? slider.value) });
+  const commitGain = (gain, delay = 0) => {
+    radioControlCommitQueue.queue("adjustRadioGain", {
+      gain: normalizeRadioGain(gain ?? slider.value)
+    }, delay);
   };
   const scheduleCommit = gain => {
-    if (radioGainCommitTimer) clearTimeout(radioGainCommitTimer);
-    radioGainCommitTimer = setTimeout(() => {
-      radioGainCommitTimer = null;
-      sendAction("adjustRadioGain", { gain: normalizeRadioGain(gain) });
-    }, 180);
+    commitGain(gain, 180);
   };
 
   slider.addEventListener("input", event => {
@@ -1290,8 +1288,8 @@ function activateRadioGain(receiver, slider) {
     scheduleCommit(gain);
   });
 
-  slider.addEventListener("change", async event => {
-    await commitGain(event.currentTarget.value);
+  slider.addEventListener("change", event => {
+    commitGain(event.currentTarget.value);
   });
 
   slider.addEventListener("wheel", event => {
@@ -1452,8 +1450,7 @@ function bindSocket() {
 
     if (packet.type === "actionError") {
       if (packet.targetUserId && packet.targetUserId !== game.user.id) return;
-      const handled = resolvePendingAction(packet.requestId, false, packet.message);
-      if (!handled && packet.message) ui.notifications.warn(packet.message);
+      resolvePendingAction(packet.requestId, false, packet.message);
       return;
     }
 
@@ -1479,11 +1476,63 @@ function bindSocket() {
   });
 }
 
-function waitForActionConfirmation(requestId) {
+function createLatestActionQueue(dispatch, schedule = setTimeout, cancel = clearTimeout) {
+  const states = new Map();
+
+  const flush = async action => {
+    const state = states.get(action);
+    if (!state || state.inFlight || !state.payload) return false;
+
+    const payload = state.payload;
+    state.payload = null;
+    state.inFlight = true;
+    try {
+      return await dispatch(action, payload);
+    } finally {
+      state.inFlight = false;
+      if (state.payload) {
+        if (state.timer) cancel(state.timer);
+        state.timer = schedule(() => {
+          state.timer = null;
+          flush(action).catch(() => {});
+        }, 0);
+      } else if (!state.timer) {
+        states.delete(action);
+      }
+    }
+  };
+
+  const queue = (action, payload, delay = 180) => {
+    let state = states.get(action);
+    if (!state) {
+      state = { payload: null, timer: null, inFlight: false };
+      states.set(action, state);
+    }
+
+    state.payload = payload;
+    if (state.timer) cancel(state.timer);
+    state.timer = schedule(() => {
+      state.timer = null;
+      flush(action).catch(() => {});
+    }, Math.max(0, delay));
+  };
+
+  return {
+    queue,
+    flush,
+    pendingCount: () => states.size
+  };
+}
+
+function waitForActionConfirmation(requestId, options = {}) {
   return new Promise(resolve => {
     const timeout = setTimeout(() => {
       pendingActionRequests.delete(requestId);
-      ui.notifications.warn("Dominion Train could not confirm that action.");
+      const now = Date.now();
+      if (!options.suppressTimeoutWarning && now - lastActionConfirmationWarning >= ACTION_CONFIRM_WARNING_COOLDOWN_MS) {
+        lastActionConfirmationWarning = now;
+        ui.notifications.warn("Dominion Train could not confirm that action.");
+      }
       resolve(false);
     }, ACTION_CONFIRM_TIMEOUT_MS);
 
@@ -1503,7 +1552,7 @@ function resolvePendingAction(requestId, success, message = "") {
   return true;
 }
 
-async function sendAction(action, payload = {}) {
+async function sendAction(action, payload = {}, options = {}) {
   if (!game.user.isGM && !PLAYER_RADIO_ACTIONS.has(action)) {
     ui.notifications.warn("Only a GM can update Dominion train data.");
     return false;
@@ -1524,7 +1573,7 @@ async function sendAction(action, payload = {}) {
   }
 
   const requestId = randomId();
-  const confirmation = waitForActionConfirmation(requestId);
+  const confirmation = waitForActionConfirmation(requestId, options);
   try {
     game.socket.emit(SOCKET_NAME, {
       action,
@@ -1830,7 +1879,12 @@ function ensureSharedRadioPlaybackSession() {
   const signal = radioSignalAtFrequency(data, data.radio.frequency, data.radio.gain);
   const connectionKey = signal?.frequencyReady ? radioBroadcastPlaybackKey(signal.broadcast) : "";
   if (!connectionKey || cleanString(data.radio.playbackSession?.connectionKey) === connectionKey) return;
-  sendAction("syncRadioPlayback", {}).catch(() => {});
+  if (radioPlaybackSyncPromise) return;
+  radioPlaybackSyncPromise = sendAction("syncRadioPlayback", {}, { suppressTimeoutWarning: true })
+    .catch(() => false)
+    .finally(() => {
+      radioPlaybackSyncPromise = null;
+    });
 }
 
 function syncRadioPlaybackSession(data, random = Math.random, now = radioServerTime()) {

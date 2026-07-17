@@ -49,7 +49,7 @@ const context = {
 };
 context.globalThis = context;
 vm.createContext(context);
-vm.runInContext(`${source}\n;globalThis.__radioTest = { normalizeRadioBroadcast, radioSignalAtFrequency, radioSignalPresentation, radioPoweredOffPresentation, ensureRadioPowered, ensureRadioSignalAligned, parseRadioResponses, normalizeRadioFrequency, normalizeRadioGain, radioDialAngle, radioActorOptions, radioTier3Source, radioTier3TrackConfig, syncRadioPlaybackSession, synchronizedRadioStartOffset };`, context);
+vm.runInContext(`${source}\n;globalThis.__radioTest = { normalizeRadioBroadcast, radioSignalAtFrequency, radioSignalPresentation, radioPoweredOffPresentation, ensureRadioPowered, ensureRadioSignalAligned, parseRadioResponses, normalizeRadioFrequency, normalizeRadioGain, radioDialAngle, radioActorOptions, radioTier3Source, radioTier3TrackConfig, syncRadioPlaybackSession, synchronizedRadioStartOffset, createLatestActionQueue };`, context);
 
 const radio = context.__radioTest;
 
@@ -347,4 +347,48 @@ test("GM response lines retain labels and immediate outcomes", () => {
   assert.equal(responses[0].label, "Request route");
   assert.equal(responses[0].outcome, "Northern line opens");
   assert.deepEqual(Array.from(radio.parseRadioResponses("")), []);
+});
+
+test("rapid radio control writes keep only the latest queued value", async () => {
+  const dispatched = [];
+  const queue = radio.createLatestActionQueue(async (action, payload) => {
+    dispatched.push({ action, payload: { ...payload } });
+    return true;
+  });
+
+  for (let index = 1; index <= 30; index += 1) {
+    queue.queue("adjustRadioGain", { gain: index / 10 }, 10);
+  }
+  await new Promise(resolve => setTimeout(resolve, 30));
+
+  assert.deepEqual(dispatched, [{ action: "adjustRadioGain", payload: { gain: 3 } }]);
+  assert.equal(queue.pendingCount(), 0);
+});
+
+test("radio control writes keep one latest value while confirmation is pending", async () => {
+  const dispatched = [];
+  let releaseFirst;
+  const firstConfirmation = new Promise(resolve => {
+    releaseFirst = resolve;
+  });
+  const queue = radio.createLatestActionQueue(async (action, payload) => {
+    dispatched.push({ action, payload: { ...payload } });
+    if (dispatched.length === 1) await firstConfirmation;
+    return true;
+  });
+
+  queue.queue("adjustRadioGain", { gain: 1.5 }, 0);
+  await new Promise(resolve => setTimeout(resolve, 5));
+  queue.queue("adjustRadioGain", { gain: 2.5 }, 0);
+  queue.queue("adjustRadioGain", { gain: 4.5 }, 0);
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.deepEqual(dispatched, [{ action: "adjustRadioGain", payload: { gain: 1.5 } }]);
+
+  releaseFirst();
+  await new Promise(resolve => setTimeout(resolve, 15));
+  assert.deepEqual(dispatched, [
+    { action: "adjustRadioGain", payload: { gain: 1.5 } },
+    { action: "adjustRadioGain", payload: { gain: 4.5 } }
+  ]);
+  assert.equal(queue.pendingCount(), 0);
 });
