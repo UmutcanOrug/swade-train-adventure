@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.7
+
+- Added a per-user Receiver Volume slider beside Mute. It scales that player's radio audio without changing the GM's world volume or restarting synchronized tracks.
+- Stored Receiver Volume as client-specific state so every player can keep a different preferred level.
+- Removed full world and Scavenge event normalization from live frequency and Signal Gain updates by using a lightweight cached radio snapshot.
+- Coalesced rapid receiver DOM work to one update per animation frame and cached receiver element lookups.
+- Prevented stabilization refreshes from repeatedly issuing identical crossfade commands.
+- Avoided a duplicate full-world normalization during panel renders and skipped inactive Events/actor context preparation.
+
 ## 0.2.6
 
 - Coalesced rapid frequency and Signal Gain changes so each control keeps only its latest pending world-data write while live receiver movement remains synchronized for all viewers.

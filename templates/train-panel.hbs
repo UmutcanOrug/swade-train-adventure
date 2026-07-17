@@ -501,6 +501,11 @@
               <p>Shared receiver / Turn {{summary.currentTurn}} / Lock attempts {{radio.attemptsDisplay}}</p>
             </div>
             <div class="dt-radio-command-actions">
+              <label class="dt-radio-volume-control" title="Receiver Volume">
+                <i class="fa-solid fa-volume-low"></i>
+                <input type="range" min="0" max="100" step="5" value="{{radio.volumePercent}}" data-radio-user-volume aria-label="Receiver Volume">
+                <output data-radio-volume-output>{{radio.volumePercent}}%</output>
+              </label>
               <button type="button" class="dt-radio-mute-button {{#if radio.muted}}is-active{{/if}}" data-radio-mute aria-pressed="{{radio.muted}}" title="{{#if radio.muted}}Unmute Receiver Audio{{else}}Mute Receiver Audio{{/if}}">
                 <i class="fa-solid {{#if radio.muted}}fa-volume-xmark{{else}}fa-volume-high{{/if}}"></i>
                 <span>{{#if radio.muted}}Unmute{{else}}Mute{{/if}}</span>

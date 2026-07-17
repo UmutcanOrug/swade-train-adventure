@@ -135,6 +135,12 @@ const radioControlCommitQueue = createLatestActionQueue((action, payload) => (
 ));
 const radioAmbientTracks = new Map();
 const radioOneShotAudio = new Map();
+const radioReceiverElementCache = new WeakMap();
+let radioRuntimeSource = null;
+let radioRuntimeData = null;
+let radioDomFrame = null;
+let queuedRadioDomUpdate = null;
+let radioVolumePersistTimer = null;
 let radioStabilityTimer = null;
 let radioStabilityState = {
   broadcastId: "",
@@ -152,7 +158,8 @@ const uiState = {
   activeEventTier: 0,
   radioGmTab: "broadcasts",
   expandedRadioBroadcastId: "",
-  radioMuted: false
+  radioMuted: false,
+  radioVolume: 1
 };
 
 Hooks.once("init", () => {
@@ -245,7 +252,8 @@ class DominionTrainApplication extends HandlebarsApplicationMixin(ApplicationV2)
 
   async _prepareContext(options) {
     const context = await super._prepareContext(options);
-    return Object.assign(context, buildContext(getWorldData()));
+    const rawData = game.settings.get(MODULE_ID, DATA_SETTING) || defaultWorldData();
+    return Object.assign(context, buildContext(rawData));
   }
 
   async _onRender(context, options) {
@@ -254,6 +262,7 @@ class DominionTrainApplication extends HandlebarsApplicationMixin(ApplicationV2)
   }
 
   async _onClose(options) {
+    cancelRadioReceiverDomUpdate();
     stopRadioAudio();
     await super._onClose(options);
   }
@@ -301,6 +310,7 @@ function toggleTrainPanel() {
 
 function buildContext(rawData) {
   const data = normalizeData(rawData);
+  cacheRadioRuntimeData(rawData, data);
   const isGM = Boolean(game.user?.isGM);
   const summary = buildSummary(data);
   const visibleSummary = summaryContext(data, summary, isGM);
@@ -319,6 +329,7 @@ function buildContext(rawData) {
   const eventCategory = getSelectedEventCategory(data);
   const eventBiome = getSelectedEventBiome(data);
   const radio = radioContext(data, isGM);
+  const activeTab = uiState.activeTab;
 
   return {
     moduleId: MODULE_ID,
@@ -351,15 +362,15 @@ function buildContext(rawData) {
     })),
     scavengeCards: SCAVENGE_CATEGORIES.map(category => scavengeCardContext(category)),
     scavengeDieOptions: HUNTING_DIE_OPTIONS,
-    scavengeActors: actorOptions(),
+    scavengeActors: activeTab === "scavenge" ? actorOptions() : [],
     scavengeLog: data.scavengeLog.map(huntingLogContext),
     radio,
-    radioActors: radioActorOptions(isGM),
-    radioUsers: radioUserContexts(data),
-    radioRequests: radioRequestContexts(data),
+    radioActors: activeTab === "radio" ? radioActorOptions(isGM) : [],
+    radioUsers: activeTab === "radio" ? radioUserContexts(data) : [],
+    radioRequests: activeTab === "radio" ? radioRequestContexts(data) : [],
     radioGmTab: uiState.radioGmTab,
-    radioBroadcasts: data.radio.broadcasts.map(broadcast => radioBroadcastContext(broadcast, data)),
-    radioLog: data.radio.log.map(entry => radioLogContext(entry, data, isGM)),
+    radioBroadcasts: activeTab === "radio" ? data.radio.broadcasts.map(broadcast => radioBroadcastContext(broadcast, data)) : [],
+    radioLog: activeTab === "radio" ? data.radio.log.map(entry => radioLogContext(entry, data, isGM)) : [],
     eventCategories: SCAVENGE_CATEGORIES.map(category => ({
       ...category,
       active: category.key === eventCategory.key
@@ -368,10 +379,10 @@ function buildContext(rawData) {
       ...biome,
       active: biome.id === eventBiome.id
     })),
-    eventTierFilters: eventTierFilters(),
+    eventTierFilters: activeTab === "events" ? eventTierFilters() : [],
     selectedEventCategory: eventCategory,
     selectedEventBiome: eventBiome,
-    selectedEventTiers: eventTierContext(data, eventCategory, eventBiome),
+    selectedEventTiers: activeTab === "events" ? eventTierContext(data, eventCategory, eventBiome) : [],
     route: routeContext(data, isGM),
     settings: data.settings,
     summary: visibleSummary,
@@ -545,6 +556,7 @@ function radioContext(data, isGM) {
     signal: presentation,
     poweredOn,
     muted: uiState.radioMuted,
+    volumePercent: Math.round(normalizeRadioUserVolume(uiState.radioVolume) * 100),
     attemptsUsed,
     attemptLimit,
     attemptsDisplay: attemptLimit ? `${attemptsUsed} / ${attemptLimit}` : `${attemptsUsed} / unlimited`
@@ -1026,8 +1038,21 @@ function activateRadioListeners(root) {
     updateRadioReceiverDom(root, liveRadioFrequency, liveRadioGain);
     ensureSharedRadioPlaybackSession();
   } else {
+    cancelRadioReceiverDomUpdate();
     stopRadioAudio();
   }
+
+  const volumeSlider = root.querySelector("[data-radio-user-volume]");
+  const volumeOutput = root.querySelector("[data-radio-volume-output]");
+  volumeSlider?.addEventListener("input", event => {
+    uiState.radioVolume = normalizeRadioUserVolume(toNumber(event.currentTarget.value, 100) / 100);
+    if (volumeOutput) volumeOutput.textContent = `${Math.round(uiState.radioVolume * 100)}%`;
+    applyRadioUserVolume();
+    scheduleRadioVolumePersist();
+  });
+  volumeSlider?.addEventListener("change", () => {
+    persistClientState();
+  });
 
   root.querySelector("[data-radio-mute]")?.addEventListener("click", event => {
     event.preventDefault();
@@ -1416,7 +1441,7 @@ function bindSocket() {
     if (!packet || typeof packet !== "object") return;
 
     if (packet.type === "radioFrequency") {
-      if (getWorldData().radio.poweredOn === false) return;
+      if (getRadioRuntimeData().radio.poweredOn === false) return;
       const sender = users().find(user => user.id === packet.userId);
       if (!sender) return;
       applyLiveRadioFrequency(packet.frequency, sender.name || "Operator", packet.stamp);
@@ -1424,7 +1449,7 @@ function bindSocket() {
     }
 
     if (packet.type === "radioGain") {
-      if (getWorldData().radio.poweredOn === false) return;
+      if (getRadioRuntimeData().radio.poweredOn === false) return;
       const sender = users().find(user => user.id === packet.userId);
       if (!sender) return;
       applyLiveRadioGain(packet.gain, sender.name || "Operator", packet.stamp);
@@ -1438,6 +1463,7 @@ function bindSocket() {
     }
 
     if (packet.type === "refresh") {
+      invalidateRadioRuntimeData();
       scheduleRefresh();
       return;
     }
@@ -1874,7 +1900,7 @@ function clearScavengeLog(data) {
 }
 
 function ensureSharedRadioPlaybackSession() {
-  const data = getWorldData();
+  const data = getRadioRuntimeData();
   if (data.radio.poweredOn === false) return;
   const signal = radioSignalAtFrequency(data, data.radio.frequency, data.radio.gain);
   const connectionKey = signal?.frequencyReady ? radioBroadcastPlaybackKey(signal.broadcast) : "";
@@ -2298,7 +2324,7 @@ function radioDialAngle(value) {
 }
 
 function queueRadioFrequencyBroadcast(frequency) {
-  if (getWorldData().radio.poweredOn === false) return;
+  if (getRadioRuntimeData().radio.poweredOn === false) return;
   queuedRadioFrequency = normalizeRadioFrequency(frequency);
   if (radioBroadcastTimer) return;
   radioBroadcastTimer = setTimeout(() => {
@@ -2315,7 +2341,7 @@ function queueRadioFrequencyBroadcast(frequency) {
 }
 
 function queueRadioGainBroadcast(gain) {
-  if (getWorldData().radio.poweredOn === false) return;
+  if (getRadioRuntimeData().radio.poweredOn === false) return;
   queuedRadioGain = normalizeRadioGain(gain);
   if (radioGainBroadcastTimer) return;
   radioGainBroadcastTimer = setTimeout(() => {
@@ -2331,24 +2357,89 @@ function queueRadioGainBroadcast(gain) {
   }, 60);
 }
 
+function scheduleRadioReceiverDomUpdate(root, frequency, gain) {
+  queuedRadioDomUpdate = { root, frequency, gain };
+  if (radioDomFrame !== null) return;
+
+  const run = () => {
+    radioDomFrame = null;
+    const update = queuedRadioDomUpdate;
+    queuedRadioDomUpdate = null;
+    if (update?.root) updateRadioReceiverDom(update.root, update.frequency, update.gain);
+  };
+  radioDomFrame = typeof globalThis.requestAnimationFrame === "function"
+    ? globalThis.requestAnimationFrame(run)
+    : setTimeout(run, 16);
+}
+
+function cancelRadioReceiverDomUpdate() {
+  if (radioDomFrame !== null) {
+    if (typeof globalThis.cancelAnimationFrame === "function") globalThis.cancelAnimationFrame(radioDomFrame);
+    else clearTimeout(radioDomFrame);
+  }
+  radioDomFrame = null;
+  queuedRadioDomUpdate = null;
+}
+
 function applyLiveRadioFrequency(frequency, tunedBy = "", stamp = Date.now()) {
-  if (getWorldData().radio.poweredOn === false) return;
+  if (getRadioRuntimeData().radio.poweredOn === false) return;
   const nextStamp = toNumber(stamp, Date.now());
   liveRadioStamp = nextStamp;
   liveRadioFrequency = normalizeRadioFrequency(frequency);
   liveRadioTunedBy = cleanString(tunedBy) || liveRadioTunedBy;
   const root = trainApp?.element?.querySelector?.(".dt-root");
-  if (root) updateRadioReceiverDom(root, liveRadioFrequency, liveRadioGain);
+  if (root) scheduleRadioReceiverDomUpdate(root, liveRadioFrequency, liveRadioGain);
 }
 
 function applyLiveRadioGain(gain, tunedBy = "", stamp = Date.now()) {
-  if (getWorldData().radio.poweredOn === false) return;
+  if (getRadioRuntimeData().radio.poweredOn === false) return;
   const nextStamp = toNumber(stamp, Date.now());
   liveRadioStamp = nextStamp;
   liveRadioGain = normalizeRadioGain(gain);
   liveRadioTunedBy = cleanString(tunedBy) || liveRadioTunedBy;
   const root = trainApp?.element?.querySelector?.(".dt-root");
-  if (root) updateRadioReceiverDom(root, liveRadioFrequency, liveRadioGain);
+  if (root) scheduleRadioReceiverDomUpdate(root, liveRadioFrequency, liveRadioGain);
+}
+
+function radioReceiverElements(receiver) {
+  let elements = radioReceiverElementCache.get(receiver);
+  if (elements) return elements;
+
+  elements = {
+    frequencySlider: receiver.querySelector("[data-radio-frequency]"),
+    dial: receiver.querySelector("[data-radio-dial]"),
+    frequencyDisplay: receiver.querySelector("[data-radio-frequency-display]"),
+    gainSlider: receiver.querySelector("[data-radio-gain]"),
+    gainDisplay: receiver.querySelector("[data-radio-gain-display]"),
+    gainStatus: receiver.querySelector("[data-radio-gain-status]"),
+    gainClarity: receiver.querySelector("[data-radio-gain-clarity]"),
+    tunedBy: receiver.querySelector("[data-radio-tuned-by]"),
+    strengthFill: receiver.querySelector("[data-radio-strength-fill]"),
+    strengthLabel: receiver.querySelector("[data-radio-strength-label]"),
+    transcript: receiver.querySelector("[data-radio-transcript]"),
+    skill: receiver.querySelector("[data-radio-skill]"),
+    stabilityFill: receiver.querySelector("[data-radio-stability-fill]"),
+    stabilityLabel: receiver.querySelector("[data-radio-stability-label]"),
+    actorSelect: receiver.querySelector("[name='radioActorId']"),
+    actorSearch: receiver.querySelector("[data-radio-actor-search]"),
+    actorResults: receiver.querySelector("[data-radio-actor-results]"),
+    lockButtons: Array.from(receiver.querySelectorAll("[data-perform-radio-lock], [data-request-radio-lock]")),
+    lockRow: receiver.querySelector("[data-radio-lock-row]"),
+    rollLabel: receiver.querySelector("[data-radio-roll-label]")
+  };
+  radioReceiverElementCache.set(receiver, elements);
+  return elements;
+}
+
+function setRadioText(element, value) {
+  if (!element) return;
+  const text = String(value ?? "");
+  if (element.textContent !== text) element.textContent = text;
+}
+
+function setRadioStyle(element, property, value) {
+  if (!element || element.style.getPropertyValue(property) === value) return;
+  element.style.setProperty(property, value);
 }
 
 function updateRadioReceiverDom(root, frequency = null, gain = null) {
@@ -2358,7 +2449,7 @@ function updateRadioReceiverDom(root, frequency = null, gain = null) {
     return;
   }
 
-  const data = getWorldData();
+  const data = getRadioRuntimeData();
   const poweredOn = data.radio.poweredOn !== false;
   const tunedFrequency = normalizeRadioFrequency(frequency ?? liveRadioFrequency ?? data.radio.frequency);
   const tunedGain = normalizeRadioGain(gain ?? liveRadioGain ?? data.radio.gain);
@@ -2370,63 +2461,56 @@ function updateRadioReceiverDom(root, frequency = null, gain = null) {
     : { ready: false, progress: 0 };
   if (!poweredOn) resetRadioStability();
   const presentation = poweredOn ? radioSignalPresentation(signal, stability) : radioPoweredOffPresentation();
-  const slider = receiver.querySelector("[data-radio-frequency]");
+  const elements = radioReceiverElements(receiver);
+  const slider = elements.frequencySlider;
   if (slider) {
     slider.value = tunedFrequency;
     slider.disabled = !poweredOn;
   }
-  const dial = receiver.querySelector("[data-radio-dial]");
+  const dial = elements.dial;
   if (dial) {
-    dial.style.setProperty("--dial-angle", `${radioDialAngle(tunedFrequency)}deg`);
-    dial.setAttribute("aria-valuenow", formatRadioFrequency(tunedFrequency));
+    setRadioStyle(dial, "--dial-angle", `${radioDialAngle(tunedFrequency)}deg`);
+    if (dial.getAttribute("aria-valuenow") !== formatRadioFrequency(tunedFrequency)) {
+      dial.setAttribute("aria-valuenow", formatRadioFrequency(tunedFrequency));
+    }
     dial.disabled = !poweredOn;
   }
-  const display = receiver.querySelector("[data-radio-frequency-display]");
-  if (display) display.textContent = `${formatRadioFrequency(tunedFrequency)} MHz`;
-  const gainSlider = receiver.querySelector("[data-radio-gain]");
+  setRadioText(elements.frequencyDisplay, `${formatRadioFrequency(tunedFrequency)} MHz`);
+  const gainSlider = elements.gainSlider;
   if (gainSlider) {
     gainSlider.value = tunedGain;
     gainSlider.disabled = !poweredOn;
-    gainSlider.setAttribute("aria-valuenow", formatRadioGain(tunedGain));
+    if (gainSlider.getAttribute("aria-valuenow") !== formatRadioGain(tunedGain)) {
+      gainSlider.setAttribute("aria-valuenow", formatRadioGain(tunedGain));
+    }
   }
-  const gainDisplay = receiver.querySelector("[data-radio-gain-display]");
-  if (gainDisplay) gainDisplay.textContent = formatRadioGain(tunedGain);
-  const gainStatus = receiver.querySelector("[data-radio-gain-status]");
-  if (gainStatus) gainStatus.textContent = presentation.gainStatusLabel;
-  const gainClarity = receiver.querySelector("[data-radio-gain-clarity]");
-  if (gainClarity) gainClarity.textContent = `CLARITY ${presentation.gainClarity}%`;
-  const tunedBy = receiver.querySelector("[data-radio-tuned-by]");
-  if (tunedBy) tunedBy.textContent = `Tuned by ${liveRadioTunedBy || data.radio.lastTunedBy || "No operator"}`;
-  const meter = receiver.querySelector("[data-radio-strength-fill]");
-  if (meter) meter.style.width = `${presentation.strength}%`;
-  const strength = receiver.querySelector("[data-radio-strength-label]");
-  if (strength) strength.textContent = `${presentation.strengthLabel} / ${presentation.strength}%`;
-  const transcript = receiver.querySelector("[data-radio-transcript]");
-  if (transcript) transcript.textContent = presentation.snippet;
-  const skill = receiver.querySelector("[data-radio-skill]");
-  if (skill) skill.textContent = presentation.skillLabel;
-  const stabilityFill = receiver.querySelector("[data-radio-stability-fill]");
-  if (stabilityFill) stabilityFill.style.width = `${presentation.stabilityProgress}%`;
-  const stabilityLabel = receiver.querySelector("[data-radio-stability-label]");
-  if (stabilityLabel) stabilityLabel.textContent = presentation.stabilityLabel;
+  setRadioText(elements.gainDisplay, formatRadioGain(tunedGain));
+  setRadioText(elements.gainStatus, presentation.gainStatusLabel);
+  setRadioText(elements.gainClarity, `CLARITY ${presentation.gainClarity}%`);
+  setRadioText(elements.tunedBy, `Tuned by ${liveRadioTunedBy || data.radio.lastTunedBy || "No operator"}`);
+  setRadioStyle(elements.strengthFill, "width", `${presentation.strength}%`);
+  setRadioText(elements.strengthLabel, `${presentation.strengthLabel} / ${presentation.strength}%`);
+  setRadioText(elements.transcript, presentation.snippet);
+  setRadioText(elements.skill, presentation.skillLabel);
+  setRadioStyle(elements.stabilityFill, "width", `${presentation.stabilityProgress}%`);
+  setRadioText(elements.stabilityLabel, presentation.stabilityLabel);
 
-  const actorSelect = receiver.querySelector("[name='radioActorId']");
+  const actorSelect = elements.actorSelect;
   const requiresLock = presentation.requiresLock !== false;
   if (actorSelect) actorSelect.disabled = !poweredOn || !requiresLock;
-  const actorSearch = receiver.querySelector("[data-radio-actor-search]");
+  const actorSearch = elements.actorSearch;
   if (actorSearch) actorSearch.disabled = !poweredOn || !requiresLock;
   if (!poweredOn) {
-    const actorResults = receiver.querySelector("[data-radio-actor-results]");
+    const actorResults = elements.actorResults;
     if (actorResults) actorResults.hidden = true;
   }
   const actorSelected = Boolean(actorSelect?.value);
-  receiver.querySelectorAll("[data-perform-radio-lock], [data-request-radio-lock]").forEach(button => {
+  elements.lockButtons.forEach(button => {
     button.disabled = !poweredOn || !requiresLock || !presentation.stable || !actorSelected || button.dataset.requestPending === "true";
   });
-  const lockRow = receiver.querySelector("[data-radio-lock-row]");
+  const lockRow = elements.lockRow;
   if (lockRow) lockRow.classList.toggle("is-open-broadcast", !requiresLock);
-  const rollLabel = receiver.querySelector("[data-radio-roll-label]");
-  if (rollLabel) rollLabel.textContent = requiresLock ? "Required Roll" : "Open Broadcast";
+  setRadioText(elements.rollLabel, requiresLock ? "Required Roll" : "Open Broadcast");
   receiver.classList.toggle("is-powered-off", !poweredOn);
   receiver.classList.toggle("is-signal", Boolean(signal));
   receiver.classList.toggle("is-carrier-acquired", Boolean(signal?.frequencyReady));
@@ -2508,6 +2592,15 @@ function resetRadioStability() {
 
 function radioTabVisible() {
   return Boolean(trainApp?.rendered && uiState.activeTab === "radio" && trainApp.element?.querySelector?.("[data-radio-receiver]"));
+}
+
+function normalizeRadioUserVolume(value) {
+  return clamp(toNumber(value, 1), 0, 1);
+}
+
+function radioAudibleVolume(volume, muted = uiState.radioMuted, userVolume = uiState.radioVolume) {
+  if (muted) return 0;
+  return clamp(toNumber(volume, 0) * normalizeRadioUserVolume(userVolume), 0, 1);
 }
 
 function syncRadioAmbient(data, signal, stable = false) {
@@ -2608,9 +2701,11 @@ async function ensureRadioAmbientTrack(kind, source, options = {}) {
   }
   if (current?.url === url && current.connectionKey === connectionKey) {
     if (current.sound?.loaded && !current.sound.playing) {
+      const audibleTarget = radioAudibleVolume(current.targetVolume || 0);
+      current.audibleTarget = audibleTarget;
       current.sound.play({
         loop: true,
-        volume: uiState.radioMuted ? 0 : current.targetVolume || 0,
+        volume: audibleTarget,
         offset: current.startOffset || 0
       }).catch(() => {});
     }
@@ -2633,6 +2728,7 @@ async function ensureRadioAmbientTrack(kind, source, options = {}) {
     playbackStartedAt,
     startOffset: 0,
     targetVolume: 0,
+    audibleTarget: -1,
     disposed: false
   };
   radioAmbientTracks.set(kind, track);
@@ -2646,7 +2742,9 @@ async function ensureRadioAmbientTrack(kind, source, options = {}) {
       ? synchronizedRadioStartOffset(sound.duration, track.playbackPosition, track.playbackStartedAt)
       : 0;
     await sound.play({ loop: true, volume: 0, offset: track.startOffset });
-    if (track.targetVolume > 0 && !uiState.radioMuted) await sound.fade(track.targetVolume, { duration: 450, type: "linear" });
+    const audibleTarget = radioAudibleVolume(track.targetVolume);
+    track.audibleTarget = audibleTarget;
+    if (audibleTarget > 0) await sound.fade(audibleTarget, { duration: 450, type: "linear" });
   } catch (_error) {
     if (radioAmbientTracks.get(kind) === track) radioAmbientTracks.delete(kind);
   }
@@ -2656,19 +2754,27 @@ function crossfadeRadioTracks(targets, duration = 450) {
   for (const [kind, track] of radioAmbientTracks) {
     const target = clamp(toNumber(targets[kind], 0), 0, 1);
     track.targetVolume = target;
-    const audibleTarget = uiState.radioMuted ? 0 : target;
+    const audibleTarget = radioAudibleVolume(target);
+    if (Math.abs(toNumber(track.audibleTarget, -1) - audibleTarget) < 0.005) continue;
+    track.audibleTarget = audibleTarget;
     if (track.sound?.playing) track.sound.fade(audibleTarget, { duration, type: "linear" }).catch(() => {});
   }
 }
 
-function fadeRadioAudioForMute(muted) {
+function applyRadioUserVolume(duration = 180) {
   for (const track of radioAmbientTracks.values()) {
-    const target = muted ? 0 : track.targetVolume;
-    if (track.sound?.playing) track.sound.fade(target, { duration: 180, type: "linear" }).catch(() => {});
+    const target = radioAudibleVolume(track.targetVolume);
+    if (Math.abs(toNumber(track.audibleTarget, -1) - target) < 0.005) continue;
+    track.audibleTarget = target;
+    if (track.sound?.playing) track.sound.fade(target, { duration, type: "linear" }).catch(() => {});
   }
   for (const [sound, targetVolume] of radioOneShotAudio) {
-    if (sound?.playing) sound.fade(muted ? 0 : targetVolume, { duration: 180, type: "linear" }).catch(() => {});
+    if (sound?.playing) sound.fade(radioAudibleVolume(targetVolume), { duration, type: "linear" }).catch(() => {});
   }
+}
+
+function fadeRadioAudioForMute() {
+  applyRadioUserVolume(180);
 }
 
 function stopRadioAudio({ resetStability: shouldResetStability = true } = {}) {
@@ -2689,7 +2795,8 @@ async function playRadioPreview(source, kind = "noiseSoundUrl") {
     ui.notifications.warn("Receiver audio is muted.");
     return;
   }
-  if (getWorldData().radio.poweredOn === false) {
+  const data = getRadioRuntimeData();
+  if (data.radio.poweredOn === false) {
     ui.notifications.warn("Receiver is currently powered off.");
     return;
   }
@@ -2698,7 +2805,7 @@ async function playRadioPreview(source, kind = "noiseSoundUrl") {
     return;
   }
   try {
-    await playRadioOneShot(cleanString(source), clamp(toNumber(getWorldData().radio.settings.volume, 0.55), 0, 1));
+    await playRadioOneShot(cleanString(source), clamp(toNumber(data.radio.settings.volume, 0.55), 0, 1));
   } catch (_error) {
     ui.notifications.warn(`Could not play ${kind}.`);
   }
@@ -2706,7 +2813,7 @@ async function playRadioPreview(source, kind = "noiseSoundUrl") {
 
 async function playRadioCue(cue, audioUrl = "") {
   if (!radioTabVisible() || uiState.radioMuted) return;
-  const data = getWorldData();
+  const data = getRadioRuntimeData();
   if (data.radio.poweredOn === false) return;
   const source = cleanString(audioUrl);
   if (!source) return;
@@ -2726,7 +2833,7 @@ async function playRadioOneShot(source, volume) {
   try {
     await sound.load();
     await sound.play({
-      volume: uiState.radioMuted ? 0 : targetVolume,
+      volume: radioAudibleVolume(targetVolume),
       onended: () => radioOneShotAudio.delete(sound)
     });
     return sound;
@@ -3744,9 +3851,34 @@ async function ensureWorldData() {
 
 async function saveWorldData(data, reason, options = {}) {
   if (!game.user.isGM) throw new Error("Only a GM client can save Dominion train data.");
-  await game.settings.set(MODULE_ID, DATA_SETTING, normalizeData(data));
+  const normalized = normalizeData(data);
+  await game.settings.set(MODULE_ID, DATA_SETTING, normalized);
+  invalidateRadioRuntimeData();
   if (!options.silent) game.socket.emit(SOCKET_NAME, { type: "refresh", reason, stamp: Date.now() });
   scheduleRefresh();
+}
+
+function cacheRadioRuntimeData(source, data) {
+  radioRuntimeSource = source;
+  radioRuntimeData = {
+    currentTurn: Math.max(1, Math.trunc(toNumber(data?.currentTurn, 1))),
+    radio: data?.radio || normalizeRadioData(source?.radio, defaultRadioData())
+  };
+  return radioRuntimeData;
+}
+
+function invalidateRadioRuntimeData() {
+  radioRuntimeSource = null;
+  radioRuntimeData = null;
+}
+
+function getRadioRuntimeData() {
+  const source = game.settings.get(MODULE_ID, DATA_SETTING) || {};
+  if (radioRuntimeData && radioRuntimeSource === source) return radioRuntimeData;
+  return cacheRadioRuntimeData(source, {
+    currentTurn: source.currentTurn,
+    radio: normalizeRadioData(source.radio, defaultRadioData())
+  });
 }
 
 function getWorldData() {
@@ -4624,9 +4756,20 @@ function loadClientState() {
   uiState.radioGmTab = ["broadcasts", "receiver", "access"].includes(stored.radioGmTab) ? stored.radioGmTab : "broadcasts";
   uiState.expandedRadioBroadcastId = cleanString(stored.expandedRadioBroadcastId);
   uiState.radioMuted = Boolean(stored.radioMuted);
+  uiState.radioVolume = normalizeRadioUserVolume(stored.radioVolume);
+}
+
+function scheduleRadioVolumePersist() {
+  if (radioVolumePersistTimer) clearTimeout(radioVolumePersistTimer);
+  radioVolumePersistTimer = setTimeout(() => {
+    radioVolumePersistTimer = null;
+    persistClientState();
+  }, 160);
 }
 
 function persistClientState() {
+  if (radioVolumePersistTimer) clearTimeout(radioVolumePersistTimer);
+  radioVolumePersistTimer = null;
   game.settings.set(MODULE_ID, CLIENT_SETTING, clone(uiState));
 }
 

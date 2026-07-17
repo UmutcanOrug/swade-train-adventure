@@ -49,7 +49,7 @@ const context = {
 };
 context.globalThis = context;
 vm.createContext(context);
-vm.runInContext(`${source}\n;globalThis.__radioTest = { normalizeRadioBroadcast, radioSignalAtFrequency, radioSignalPresentation, radioPoweredOffPresentation, ensureRadioPowered, ensureRadioSignalAligned, parseRadioResponses, normalizeRadioFrequency, normalizeRadioGain, radioDialAngle, radioActorOptions, radioTier3Source, radioTier3TrackConfig, syncRadioPlaybackSession, synchronizedRadioStartOffset, createLatestActionQueue };`, context);
+vm.runInContext(`${source}\n;globalThis.__radioTest = { normalizeRadioBroadcast, radioSignalAtFrequency, radioSignalPresentation, radioPoweredOffPresentation, ensureRadioPowered, ensureRadioSignalAligned, parseRadioResponses, normalizeRadioFrequency, normalizeRadioGain, normalizeRadioUserVolume, radioAudibleVolume, radioDialAngle, radioActorOptions, radioTier3Source, radioTier3TrackConfig, syncRadioPlaybackSession, synchronizedRadioStartOffset, createLatestActionQueue, getRadioRuntimeData, invalidateRadioRuntimeData };`, context);
 
 const radio = context.__radioTest;
 
@@ -391,4 +391,42 @@ test("radio control writes keep one latest value while confirmation is pending",
     { action: "adjustRadioGain", payload: { gain: 4.5 } }
   ]);
   assert.equal(queue.pendingCount(), 0);
+});
+
+test("client radio volume scales audio without changing mute semantics", () => {
+  assert.equal(radio.normalizeRadioUserVolume(undefined), 1);
+  assert.equal(radio.normalizeRadioUserVolume(1.5), 1);
+  assert.equal(radio.normalizeRadioUserVolume(-0.5), 0);
+  assert.equal(radio.radioAudibleVolume(0.8, false, 0.25), 0.2);
+  assert.equal(radio.radioAudibleVolume(0.8, true, 1), 0);
+});
+
+test("live radio runtime data ignores and caches heavy scavenge data", () => {
+  const originalGet = context.game.settings.get;
+  const world = {
+    currentTurn: 9,
+    radio: {
+      poweredOn: true,
+      frequency: 103.4,
+      gain: 2.75,
+      settings: { volume: 0.6 }
+    },
+    get scavengeEvents() {
+      throw new Error("Live radio reads must not touch scavenge events.");
+    }
+  };
+  context.game.settings.get = () => world;
+  radio.invalidateRadioRuntimeData();
+
+  try {
+    const first = radio.getRadioRuntimeData();
+    const second = radio.getRadioRuntimeData();
+    assert.equal(first, second);
+    assert.equal(first.currentTurn, 9);
+    assert.equal(first.radio.frequency, 103.4);
+    assert.equal(first.radio.gain, 2.75);
+  } finally {
+    radio.invalidateRadioRuntimeData();
+    context.game.settings.get = originalGet;
+  }
 });

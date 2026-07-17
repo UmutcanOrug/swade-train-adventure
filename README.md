@@ -21,7 +21,7 @@ Foundry VTT v13 icin SWADE Dominion tren yonetim modulu.
 - Mouse ile cevrilen 80.0-120.0 MHz Radio alicisi, 1.00-5.00 Signal Gain ayari ve tum acik oyuncu panellerinde canli kontrol senkronu
 - GM yayin editoru, tur araligi, parca/tam mesaj, SWADE skill zari ve Raise bilgisi
 - GM signal-lock izinleri, oyuncu lock talebi, Radio Log ve yayin cevaplari
-- Kullaniciya ozel Mute ve butun masa icin GM kontrollu receiver Power dugmeleri
+- Kullaniciya ozel Mute ve Receiver Volume ayari ile butun masa icin GM kontrollu receiver Power dugmeleri
 - PC'leri ve player-owned actorleri one alan aramali Radio operator secici
 - Yerlesik Tier 1 Static, Tier 2 Close ve Tier 3 Understandable sesleriyle oynatma konumunu koruyan uc katmanli crossfade sistemi
 - Advance Turn otomasyonu
