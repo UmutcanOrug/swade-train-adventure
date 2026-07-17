@@ -509,22 +509,41 @@
           </div>
 
           <section class="dt-radio-receiver" data-radio-receiver>
-            <div class="dt-radio-face">
-              <div class="dt-radio-readout">
-                <span>RECEIVER BAND 80-120</span>
-                <strong data-radio-frequency-display>{{radio.frequency}} MHz</strong>
-                <small data-radio-tuned-by>Tuned by {{radio.tunedBy}}</small>
+            <div class="dt-radio-console">
+              <div class="dt-radio-display-bank">
+                <div class="dt-radio-readout">
+                  <span>RECEIVER BAND 80-120</span>
+                  <strong data-radio-frequency-display>{{radio.frequency}} MHz</strong>
+                  <small data-radio-tuned-by>Tuned by {{radio.tunedBy}}</small>
+                </div>
+                <div class="dt-radio-meter" aria-label="Signal strength">
+                  <div class="dt-radio-meter-track"><span data-radio-strength-fill style="width: {{radio.signal.strength}}%;"></span></div>
+                  <b data-radio-strength-label>{{radio.signal.strengthLabel}} / {{radio.signal.strength}}%</b>
+                </div>
               </div>
-              <div class="dt-radio-meter" aria-label="Signal strength">
-                <div class="dt-radio-meter-track"><span data-radio-strength-fill style="width: {{radio.signal.strength}}%;"></span></div>
-                <b data-radio-strength-label>{{radio.signal.strengthLabel}} / {{radio.signal.strength}}%</b>
-              </div>
-            </div>
 
-            <div class="dt-radio-tuner">
-              <input type="range" min="{{radio.minFrequency}}" max="{{radio.maxFrequency}}" step="{{radio.frequencyStep}}" value="{{radio.frequencyRaw}}" data-radio-frequency aria-label="Radio frequency">
-              <div class="dt-radio-scale" aria-hidden="true">
-                <span>80</span><span>90</span><span>100</span><span>110</span><span>120</span>
+              <div class="dt-radio-tuner">
+                <div class="dt-radio-dial-stage">
+                  <button
+                    type="button"
+                    class="dt-radio-dial"
+                    data-radio-dial
+                    role="slider"
+                    aria-label="Tune radio frequency"
+                    aria-valuemin="{{radio.minFrequency}}"
+                    aria-valuemax="{{radio.maxFrequency}}"
+                    aria-valuenow="{{radio.frequency}}"
+                    title="Turn to tune. Mouse wheel and arrow keys fine tune."
+                    style="--dial-angle: {{radio.dialAngle}}deg;"
+                  >
+                    <span class="dt-radio-dial-pointer"></span>
+                    <span class="dt-radio-dial-cap"><i class="fa-solid fa-radio"></i></span>
+                  </button>
+                </div>
+                <input class="dt-radio-frequency-input" type="range" min="{{radio.minFrequency}}" max="{{radio.maxFrequency}}" step="{{radio.frequencyStep}}" value="{{radio.frequencyRaw}}" data-radio-frequency tabindex="-1" aria-hidden="true">
+                <div class="dt-radio-scale" aria-hidden="true">
+                  <span>80</span><span>90</span><span>100</span><span>110</span><span>120</span>
+                </div>
               </div>
             </div>
 
@@ -546,6 +565,8 @@
               <div class="dt-radio-lock-status">
                 <span>Required Roll</span>
                 <strong data-radio-skill>{{radio.signal.skillLabel}}</strong>
+                <div class="dt-radio-stability-track"><span data-radio-stability-fill style="width: {{radio.signal.stabilityProgress}}%;"></span></div>
+                <small data-radio-stability-label>{{radio.signal.stabilityLabel}}</small>
               </div>
               {{#if radio.canLock}}
                 <button type="button" class="dt-primary" data-perform-radio-lock disabled title="Lock Signal">
@@ -604,116 +625,192 @@
 
           {{#if isGM}}
             <section class="dt-radio-gm-band">
-              <div class="dt-command-row">
+              <div class="dt-radio-gm-header">
                 <div>
                   <h2>GM Radio Control</h2>
-                  <p>Permissions, requests, audio, and hidden broadcasts</p>
+                  <p>Broadcast desk</p>
                 </div>
-                <button type="button" data-add-radio-broadcast title="Add Broadcast">
-                  <i class="fa-solid fa-plus"></i><span>Add Broadcast</span>
+                {{#if (eq radioGmTab "broadcasts")}}
+                  <button type="button" data-add-radio-broadcast title="Add Broadcast">
+                    <i class="fa-solid fa-plus"></i><span>New Broadcast</span>
+                  </button>
+                {{/if}}
+              </div>
+
+              <nav class="dt-radio-gm-tabs" aria-label="GM radio controls">
+                <button type="button" data-radio-gm-tab="broadcasts" class="{{#if (eq radioGmTab "broadcasts")}}active{{/if}}">
+                  <i class="fa-solid fa-tower-broadcast"></i><span>Broadcasts</span>
                 </button>
-              </div>
+                <button type="button" data-radio-gm-tab="receiver" class="{{#if (eq radioGmTab "receiver")}}active{{/if}}">
+                  <i class="fa-solid fa-sliders"></i><span>Receiver</span>
+                </button>
+                <button type="button" data-radio-gm-tab="access" class="{{#if (eq radioGmTab "access")}}active{{/if}}">
+                  <i class="fa-solid fa-user-lock"></i><span>Access</span>
+                </button>
+              </nav>
 
-              <div class="dt-radio-control-grid">
-                <section class="dt-panel">
-                  <div class="dt-panel-heading"><h2>Signal-Lock Permission</h2></div>
-                  <div class="dt-radio-user-list">
-                    {{#each radioUsers}}
-                      <label>
-                        <input type="checkbox" data-radio-permission="{{id}}" {{checked canLock}}>
-                        <span>{{name}}</span>
-                        <small>{{#if active}}Online{{else}}Offline{{/if}}{{#if pending}} / Request pending{{/if}}</small>
-                      </label>
-                    {{else}}
-                      <p class="dt-empty">No player users found.</p>
-                    {{/each}}
+              {{#if (eq radioGmTab "access")}}
+                <div class="dt-radio-access-layout">
+                  <section class="dt-radio-workspace">
+                    <div class="dt-radio-section-heading"><h3>Signal-Lock Permission</h3></div>
+                    <div class="dt-radio-user-list">
+                      {{#each radioUsers}}
+                        <label>
+                          <input type="checkbox" data-radio-permission="{{id}}" {{checked canLock}}>
+                          <span>{{name}}</span>
+                          <small>{{#if active}}Online{{else}}Offline{{/if}}{{#if pending}} / Request pending{{/if}}</small>
+                        </label>
+                      {{else}}
+                        <p class="dt-empty">No player users found.</p>
+                      {{/each}}
+                    </div>
+                  </section>
+
+                  <section class="dt-radio-workspace">
+                    <div class="dt-radio-section-heading"><h3>Pending Lock Requests</h3></div>
+                    <div class="dt-radio-request-list">
+                      {{#each radioRequests}}
+                        <article>
+                          <div><strong>{{userName}}</strong><span>{{actorName}} / {{frequencyDisplay}}</span></div>
+                          <div class="dt-inline-actions">
+                            <button type="button" data-resolve-radio-request="{{id}}" data-radio-grant="true" title="Grant Permission"><i class="fa-solid fa-check"></i></button>
+                            <button type="button" class="dt-danger-button" data-resolve-radio-request="{{id}}" data-radio-grant="false" title="Deny Request"><i class="fa-solid fa-xmark"></i></button>
+                          </div>
+                        </article>
+                      {{else}}
+                        <p class="dt-empty">No pending requests.</p>
+                      {{/each}}
+                    </div>
+                  </section>
+                </div>
+              {{/if}}
+
+              {{#if (eq radioGmTab "receiver")}}
+                <form class="dt-radio-workspace dt-radio-settings-form" data-radio-settings-form>
+                  <div class="dt-radio-section-heading">
+                    <h3>Receiver Settings</h3>
+                    <button type="submit" title="Save Receiver Settings"><i class="fa-solid fa-floppy-disk"></i><span>Save</span></button>
                   </div>
-                </section>
+                  <div class="dt-radio-settings-grid">
+                    <label>
+                      <span>Lock Attempts / Turn</span>
+                      <input type="number" name="lockAttemptsPerTurn" min="0" max="20" step="1" value="{{radio.settings.lockAttemptsPerTurn}}">
+                    </label>
+                    <label>
+                      <span>Stabilization / Seconds</span>
+                      <input type="number" name="stabilizationSeconds" min="0.5" max="10" step="0.5" value="{{radio.settings.stabilizationSeconds}}">
+                    </label>
+                    <label class="dt-wide">
+                      <span>Radio Volume</span>
+                      <input type="range" name="volume" min="0" max="1" step="0.05" value="{{radio.settings.volume}}">
+                    </label>
+                  </div>
 
-                <section class="dt-panel">
-                  <div class="dt-panel-heading"><h2>Pending Lock Requests</h2></div>
-                  <div class="dt-radio-request-list">
-                    {{#each radioRequests}}
-                      <article>
-                        <div><strong>{{userName}}</strong><span>{{actorName}} / {{frequencyDisplay}}</span></div>
-                        <div class="dt-inline-actions">
-                          <button type="button" data-resolve-radio-request="{{id}}" data-radio-grant="true" title="Grant Permission"><i class="fa-solid fa-check"></i></button>
-                          <button type="button" class="dt-danger-button" data-resolve-radio-request="{{id}}" data-radio-grant="false" title="Deny Request"><i class="fa-solid fa-xmark"></i></button>
+                  <div class="dt-radio-audio-list">
+                    <label class="dt-radio-sound-field">
+                      <span>Noise Loop</span>
+                      <div class="dt-radio-audio-row">
+                        <input type="text" name="noiseSoundUrl" value="{{radio.settings.noiseSoundUrl}}" placeholder="Foundry audio path">
+                        <button type="button" data-radio-file-picker="noiseSoundUrl" title="Choose Noise Audio"><i class="fa-solid fa-folder-open"></i></button>
+                        <button type="button" data-radio-test-sound="noiseSoundUrl" title="Test Noise"><i class="fa-solid fa-play"></i></button>
+                      </div>
+                    </label>
+                    <label class="dt-radio-sound-field">
+                      <span>Approaching Signal Loop</span>
+                      <div class="dt-radio-audio-row">
+                        <input type="text" name="approachSoundUrl" value="{{radio.settings.approachSoundUrl}}" placeholder="Foundry audio path">
+                        <button type="button" data-radio-file-picker="approachSoundUrl" title="Choose Approaching Signal Audio"><i class="fa-solid fa-folder-open"></i></button>
+                        <button type="button" data-radio-test-sound="approachSoundUrl" title="Test Approaching Signal"><i class="fa-solid fa-play"></i></button>
+                      </div>
+                    </label>
+                    <label class="dt-radio-sound-field">
+                      <span>Frequency Found Loop</span>
+                      <div class="dt-radio-audio-row">
+                        <input type="text" name="foundSoundUrl" value="{{radio.settings.foundSoundUrl}}" placeholder="Foundry audio path">
+                        <button type="button" data-radio-file-picker="foundSoundUrl" title="Choose Frequency Found Audio"><i class="fa-solid fa-folder-open"></i></button>
+                        <button type="button" data-radio-test-sound="foundSoundUrl" title="Test Frequency Found"><i class="fa-solid fa-play"></i></button>
+                      </div>
+                    </label>
+                  </div>
+                </form>
+              {{/if}}
+
+              {{#if (eq radioGmTab "broadcasts")}}
+                <div class="dt-radio-broadcast-list">
+                  {{#each radioBroadcasts}}
+                    <details class="dt-radio-broadcast {{#if enabled}}is-on-air{{/if}}" data-radio-broadcast-details="{{id}}" {{#if expanded}}open{{/if}}>
+                      <summary>
+                        <span class="dt-radio-air-light" aria-hidden="true"></span>
+                        <span class="dt-radio-broadcast-summary">
+                          <strong>{{title}}</strong>
+                          <small>{{source}}</small>
+                        </span>
+                        <span class="dt-radio-broadcast-meta">
+                          <b>{{frequencyDisplay}} MHz</b>
+                          <small>{{biomeName}}</small>
+                        </span>
+                        <span class="dt-radio-air-state">{{#if enabled}}On Air{{else}}Off Air{{/if}}</span>
+                        <i class="fa-solid fa-chevron-down dt-radio-summary-chevron"></i>
+                      </summary>
+
+                      <form data-radio-broadcast-form="{{id}}">
+                        <fieldset>
+                          <legend>Carrier</legend>
+                          <div class="dt-radio-broadcast-grid">
+                            <label class="dt-wide"><span>Broadcast Name</span><input type="text" name="title" value="{{title}}"></label>
+                            <label><span>Frequency</span><input type="number" name="frequency" min="80" max="120" step="0.1" value="{{frequencyDisplay}}"></label>
+                            <label><span>Source / Faction</span><input type="text" name="source" value="{{source}}"></label>
+                            <label><span>Biome</span><select name="biomeId">{{#each biomeOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select></label>
+                            <label class="dt-radio-on-air-toggle"><input type="checkbox" name="enabled" {{checked enabled}}><span>On Air</span></label>
+                          </div>
+                        </fieldset>
+
+                        <fieldset>
+                          <legend>Availability &amp; Lock</legend>
+                          <div class="dt-radio-broadcast-grid">
+                            <label><span>Start Turn</span><input type="number" name="startTurn" min="1" step="1" value="{{startTurn}}"></label>
+                            <label><span>End Turn (0 = none)</span><input type="number" name="endTurn" min="0" step="1" value="{{endTurn}}"></label>
+                            <label><span>Core Signal Range</span><input type="number" name="signalRange" min="0.1" max="10" step="0.1" value="{{signalRange}}"></label>
+                            <label><span>Lock Tolerance</span><input type="number" name="lockTolerance" min="0.1" max="2" step="0.1" value="{{lockTolerance}}"></label>
+                            <label><span>Skill Name</span><input type="text" name="skillName" value="{{skillName}}"></label>
+                            <label><span>Fallback Die</span><select name="fallbackDie">{{#each dieOptions}}<option value="{{sides}}" {{#if selected}}selected{{/if}}>d{{sides}}</option>{{/each}}</select></label>
+                            <label><span>Modifier</span><input type="text" inputmode="numeric" name="modifier" value="{{modifier}}" placeholder="+0"></label>
+                          </div>
+                        </fieldset>
+
+                        <fieldset>
+                          <legend>Transmission</legend>
+                          <div class="dt-radio-message-fields">
+                            <label><span>Partial Transmission</span><textarea name="partialText" rows="2">{{partialText}}</textarea></label>
+                            <label><span>Full Transmission</span><textarea name="fullText" rows="4">{{fullText}}</textarea></label>
+                            <label><span>Raise Intelligence</span><textarea name="raiseText" rows="2">{{raiseText}}</textarea></label>
+                            <label class="dt-radio-sound-field">
+                              <span>Decoded Voice / Message Audio</span>
+                              <div class="dt-radio-audio-row">
+                                <input type="text" name="audioUrl" value="{{audioUrl}}" placeholder="Foundry audio path">
+                                <button type="button" data-radio-file-picker="audioUrl" title="Choose Message Audio"><i class="fa-solid fa-folder-open"></i></button>
+                                <button type="button" data-radio-test-sound="audioUrl" title="Test Message Audio"><i class="fa-solid fa-play"></i></button>
+                              </div>
+                            </label>
+                            <label><span>Responses (label | immediate result)</span><textarea name="responseLines" rows="4">{{responseLines}}</textarea></label>
+                            <label class="dt-check-inline"><input type="checkbox" name="oneShot" {{checked oneShot}}><span>Go off air after a successful lock</span></label>
+                          </div>
+                        </fieldset>
+
+                        <div class="dt-record-actions">
+                          <button type="submit" title="Save Broadcast"><i class="fa-solid fa-floppy-disk"></i><span>Save Broadcast</span></button>
+                          <button type="button" class="dt-danger-button" data-delete-radio-broadcast="{{id}}" title="Delete Broadcast"><i class="fa-solid fa-trash-can"></i></button>
                         </div>
-                      </article>
-                    {{else}}
-                      <p class="dt-empty">No pending requests.</p>
-                    {{/each}}
-                  </div>
-                </section>
-              </div>
-
-              <form class="dt-panel" data-radio-settings-form>
-                <div class="dt-panel-heading">
-                  <h2>Receiver Audio</h2>
-                  <button type="submit" title="Save Radio Settings"><i class="fa-solid fa-floppy-disk"></i><span>Save</span></button>
+                      </form>
+                    </details>
+                  {{else}}
+                    <div class="dt-empty dt-radio-empty-broadcasts">
+                      <i class="fa-solid fa-tower-broadcast"></i>
+                      <span>No broadcasts configured.</span>
+                    </div>
+                  {{/each}}
                 </div>
-                <div class="dt-radio-settings-grid">
-                  <label>
-                    <span>Lock Attempts / Turn</span>
-                    <input type="number" name="lockAttemptsPerTurn" min="0" max="20" step="1" value="{{radio.settings.lockAttemptsPerTurn}}">
-                  </label>
-                  <label>
-                    <span>Radio Volume</span>
-                    <input type="range" name="volume" min="0" max="1" step="0.05" value="{{radio.settings.volume}}">
-                  </label>
-                  <label class="dt-radio-sound-field">
-                    <span>Noise Loop</span>
-                    <div><file-picker name="noiseSoundUrl" type="audio" value="{{radio.settings.noiseSoundUrl}}"></file-picker><button type="button" data-radio-test-sound="noiseSoundUrl" title="Test Noise"><i class="fa-solid fa-play"></i></button></div>
-                  </label>
-                  <label class="dt-radio-sound-field">
-                    <span>Approaching Signal Loop</span>
-                    <div><file-picker name="approachSoundUrl" type="audio" value="{{radio.settings.approachSoundUrl}}"></file-picker><button type="button" data-radio-test-sound="approachSoundUrl" title="Test Approach"><i class="fa-solid fa-play"></i></button></div>
-                  </label>
-                  <label class="dt-radio-sound-field">
-                    <span>Frequency Found Loop</span>
-                    <div><file-picker name="foundSoundUrl" type="audio" value="{{radio.settings.foundSoundUrl}}"></file-picker><button type="button" data-radio-test-sound="foundSoundUrl" title="Test Found"><i class="fa-solid fa-play"></i></button></div>
-                  </label>
-                </div>
-              </form>
-
-              <div class="dt-radio-broadcast-list">
-                {{#each radioBroadcasts}}
-                  <form class="dt-record dt-radio-broadcast" data-radio-broadcast-form="{{id}}">
-                    <div class="dt-record-head">
-                      <label class="dt-record-title">
-                        <span>GM Broadcast Name</span>
-                        <input type="text" name="title" value="{{title}}">
-                      </label>
-                      <label class="dt-toggle"><input type="checkbox" name="enabled" {{checked enabled}}><span>On Air</span></label>
-                    </div>
-                    <div class="dt-radio-broadcast-grid">
-                      <label><span>Frequency</span><input type="number" name="frequency" min="80" max="120" step="0.1" value="{{frequencyDisplay}}"></label>
-                      <label><span>Signal Range</span><input type="number" name="signalRange" min="0.1" max="10" step="0.1" value="{{signalRange}}"></label>
-                      <label><span>Lock Tolerance</span><input type="number" name="lockTolerance" min="0.1" max="2" step="0.1" value="{{lockTolerance}}"></label>
-                      <label><span>Source / Faction</span><input type="text" name="source" value="{{source}}"></label>
-                      <label><span>Biome</span><select name="biomeId">{{#each biomeOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select></label>
-                      <label><span>Start Turn</span><input type="number" name="startTurn" min="1" step="1" value="{{startTurn}}"></label>
-                      <label><span>End Turn (0 = none)</span><input type="number" name="endTurn" min="0" step="1" value="{{endTurn}}"></label>
-                      <label><span>Skill Name</span><input type="text" name="skillName" value="{{skillName}}"></label>
-                      <label><span>Fallback Die</span><select name="fallbackDie">{{#each dieOptions}}<option value="{{sides}}" {{#if selected}}selected{{/if}}>d{{sides}}</option>{{/each}}</select></label>
-                      <label><span>Modifier</span><input type="text" inputmode="numeric" name="modifier" value="{{modifier}}" placeholder="+0"></label>
-                    </div>
-                    <label class="dt-wide"><span>Partial Transmission</span><textarea name="partialText" rows="2">{{partialText}}</textarea></label>
-                    <label class="dt-wide"><span>Full Transmission</span><textarea name="fullText" rows="4">{{fullText}}</textarea></label>
-                    <label class="dt-wide"><span>Raise Intelligence</span><textarea name="raiseText" rows="2">{{raiseText}}</textarea></label>
-                    <label class="dt-wide dt-radio-sound-field"><span>Decoded Voice / Message Audio</span><file-picker name="audioUrl" type="audio" value="{{audioUrl}}"></file-picker></label>
-                    <label class="dt-wide"><span>Responses (label | immediate result)</span><textarea name="responseLines" rows="4">{{responseLines}}</textarea></label>
-                    <label class="dt-check-inline"><input type="checkbox" name="oneShot" {{checked oneShot}}><span>Go off air after a successful lock</span></label>
-                    <div class="dt-record-actions">
-                      <button type="submit" title="Save Broadcast"><i class="fa-solid fa-floppy-disk"></i><span>Save</span></button>
-                      <button type="button" class="dt-danger-button" data-delete-radio-broadcast="{{id}}" title="Delete Broadcast"><i class="fa-solid fa-trash-can"></i></button>
-                    </div>
-                  </form>
-                {{else}}
-                  <p class="dt-empty">No broadcasts configured.</p>
-                {{/each}}
-              </div>
+              {{/if}}
             </section>
           {{/if}}
         </section>

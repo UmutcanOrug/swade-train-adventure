@@ -1001,6 +1001,7 @@
 
 .dt-radio-settings-grid input[type="range"] {
   min-height: 34px;
+  margin: 0;
   padding: 0;
   border: 0;
   background: transparent;
@@ -1047,7 +1048,8 @@
   overflow: hidden;
   color: var(--dt-radio-green);
   text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .dt-radio-log,
@@ -1159,6 +1161,14 @@
   gap: 10px;
 }
 
+.dt-radio-settings-grid,
+.dt-radio-settings-grid > label,
+.dt-radio-audio-list,
+.dt-radio-sound-field,
+.dt-radio-audio-row {
+  min-width: 0;
+}
+
 .dt-radio-sound-field {
   grid-column: 1 / -1;
 }
@@ -1187,6 +1197,432 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.dt-radio-console {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 18px;
+  align-items: stretch;
+}
+
+.dt-radio-display-bank {
+  display: grid;
+  grid-template-columns: minmax(210px, 0.9fr) minmax(240px, 1.1fr);
+  gap: 12px;
+}
+
+.dt-radio-tuner {
+  position: relative;
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  min-height: 190px;
+  padding: 8px 12px;
+  border-left: 1px solid rgba(143, 191, 150, 0.2);
+}
+
+.dt-radio-dial-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 158px;
+}
+
+.dt-radio-receiver .dt-radio-dial {
+  --dial-angle: 0deg;
+  position: relative;
+  width: 140px;
+  height: 140px;
+  padding: 0;
+  border: 2px solid #8f6b34;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 30%, #57534a 0 8%, #292b28 34%, #121513 72%),
+    #171a18;
+  box-shadow:
+    inset 0 0 0 7px #1d211e,
+    inset 0 -10px 18px rgba(0, 0, 0, 0.55),
+    0 5px 12px rgba(0, 0, 0, 0.45);
+  color: #d4b169;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.dt-radio-receiver .dt-radio-dial:hover,
+.dt-radio-receiver .dt-radio-dial:focus-visible {
+  border-color: #d1a14b;
+  outline: 2px solid rgba(209, 161, 75, 0.3);
+  outline-offset: 3px;
+}
+
+.dt-radio-receiver .dt-radio-dial.is-turning {
+  cursor: grabbing;
+  box-shadow:
+    inset 0 0 0 7px #1d211e,
+    inset 0 -10px 18px rgba(0, 0, 0, 0.55),
+    0 0 0 3px rgba(209, 161, 75, 0.18),
+    0 8px 16px rgba(0, 0, 0, 0.5);
+}
+
+.dt-radio-dial-pointer {
+  position: absolute;
+  inset: 9px;
+  transform: rotate(var(--dial-angle));
+  pointer-events: none;
+}
+
+.dt-radio-dial-pointer::before {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 4px;
+  height: 27px;
+  border-radius: 2px;
+  background: #e2bd6c;
+  box-shadow: 0 0 7px rgba(226, 189, 108, 0.48);
+  content: "";
+  transform: translateX(-50%);
+}
+
+.dt-radio-dial-cap {
+  position: absolute;
+  inset: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #4c514a;
+  border-radius: 50%;
+  background: #222622;
+  color: #9d947e;
+  font-size: 1.1em;
+  pointer-events: none;
+}
+
+.dt-radio-dial-mark {
+  position: absolute;
+  bottom: 18px;
+  color: #8f958c;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.72em;
+}
+
+.dt-radio-dial-mark-left {
+  left: 14px;
+}
+
+.dt-radio-dial-mark-right {
+  right: 14px;
+}
+
+.dt-radio-frequency-input {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.dt-radio-stability-track {
+  height: 5px;
+  overflow: hidden;
+  border: 1px solid #34473a;
+  border-radius: 2px;
+  background: #090d0a;
+}
+
+.dt-radio-stability-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: #d1a14b;
+  transition: width 100ms linear;
+}
+
+.dt-radio-lock-status small {
+  color: #8f958c;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.7em;
+}
+
+.dt-radio-receiver.is-stabilizing .dt-radio-stability-track span {
+  box-shadow: 0 0 7px rgba(209, 161, 75, 0.45);
+}
+
+.dt-radio-receiver.is-lock-ready .dt-radio-stability-track span {
+  background: var(--dt-radio-green);
+  box-shadow: 0 0 7px rgba(143, 191, 150, 0.45);
+}
+
+.dt-radio-gm-band {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid #4c4230;
+  border-radius: 6px;
+  background: rgba(21, 23, 21, 0.76);
+}
+
+.dt-radio-gm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 62px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #4c4230;
+}
+
+.dt-radio-gm-header h2,
+.dt-radio-gm-header p {
+  margin: 0;
+}
+
+.dt-radio-gm-header p {
+  margin-top: 3px;
+  color: var(--dt-muted);
+  font-size: 0.82em;
+}
+
+.dt-radio-gm-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(130px, 1fr));
+  border-bottom: 1px solid #4c4230;
+  background: rgba(10, 12, 11, 0.5);
+}
+
+.dt-radio-gm-tabs button {
+  min-height: 44px;
+  border: 0;
+  border-right: 1px solid #3d382d;
+  border-radius: 0;
+  background: transparent;
+  color: #aaa28f;
+}
+
+.dt-radio-gm-tabs button:last-child {
+  border-right: 0;
+}
+
+.dt-radio-gm-tabs button:hover {
+  background: rgba(209, 161, 75, 0.07);
+  color: #e2dac8;
+}
+
+.dt-radio-gm-tabs button.active {
+  box-shadow: inset 0 -2px #d1a14b;
+  background: rgba(209, 161, 75, 0.1);
+  color: #f0dfb9;
+}
+
+.dt-radio-workspace {
+  min-width: 0;
+  padding: 14px;
+  background: rgba(34, 37, 33, 0.52);
+}
+
+.dt-radio-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 38px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(86, 76, 59, 0.66);
+}
+
+.dt-radio-section-heading h3 {
+  margin: 0;
+  font-size: 1em;
+}
+
+.dt-radio-access-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: #4c4230;
+}
+
+.dt-radio-settings-form {
+  display: grid;
+  gap: 12px;
+}
+
+.dt-radio-settings-grid .dt-wide {
+  grid-column: 1 / -1;
+  width: auto;
+}
+
+.dt-radio-audio-list,
+.dt-radio-message-fields {
+  display: grid;
+  gap: 10px;
+}
+
+.dt-radio-audio-row,
+.dt-radio-sound-field > .dt-radio-audio-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px 38px;
+  gap: 7px;
+}
+
+.dt-radio-audio-row > input {
+  min-width: 0;
+}
+
+.dt-radio-audio-row > button {
+  width: 38px;
+  min-width: 38px;
+  padding: 0;
+}
+
+.dt-radio-broadcast-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  padding: 0;
+}
+
+.dt-radio-broadcast {
+  min-width: 0;
+  border-bottom: 1px solid #40392d;
+  background: rgba(24, 27, 24, 0.72);
+}
+
+.dt-radio-broadcast:last-child {
+  border-bottom: 0;
+}
+
+.dt-radio-broadcast[open] {
+  background: rgba(39, 42, 37, 0.9);
+}
+
+.dt-radio-broadcast > summary {
+  display: grid;
+  grid-template-columns: 12px minmax(180px, 1fr) minmax(120px, auto) 68px 18px;
+  gap: 12px;
+  align-items: center;
+  min-height: 60px;
+  padding: 10px 14px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.dt-radio-broadcast > summary::-webkit-details-marker {
+  display: none;
+}
+
+.dt-radio-broadcast > summary:hover {
+  background: rgba(209, 161, 75, 0.06);
+}
+
+.dt-radio-air-light {
+  width: 9px;
+  height: 9px;
+  border: 1px solid #585b54;
+  border-radius: 50%;
+  background: #292c29;
+}
+
+.dt-radio-broadcast.is-on-air .dt-radio-air-light {
+  border-color: #8fbf96;
+  background: #6fa978;
+  box-shadow: 0 0 7px rgba(111, 169, 120, 0.58);
+}
+
+.dt-radio-broadcast-summary,
+.dt-radio-broadcast-meta {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.dt-radio-broadcast-summary strong,
+.dt-radio-broadcast-summary small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dt-radio-broadcast-summary small,
+.dt-radio-broadcast-meta small {
+  color: var(--dt-muted);
+  font-size: 0.78em;
+}
+
+.dt-radio-broadcast-meta {
+  text-align: right;
+}
+
+.dt-radio-broadcast-meta b {
+  color: #d8c28f;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.85em;
+}
+
+.dt-radio-air-state {
+  color: #8e8b82;
+  font-size: 0.76em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.dt-radio-broadcast.is-on-air .dt-radio-air-state {
+  color: #8fbf96;
+}
+
+.dt-radio-summary-chevron {
+  color: #77766f;
+  transition: transform 140ms ease;
+}
+
+.dt-radio-broadcast[open] .dt-radio-summary-chevron {
+  transform: rotate(180deg);
+}
+
+.dt-radio-broadcast > form {
+  display: grid;
+  gap: 12px;
+  padding: 4px 14px 14px 38px;
+  border-top: 1px solid rgba(86, 76, 59, 0.56);
+}
+
+.dt-radio-broadcast fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid #454338;
+  border-radius: 5px;
+  background: rgba(13, 16, 14, 0.34);
+}
+
+.dt-radio-broadcast legend {
+  padding: 0 6px;
+  color: #d8c28f;
+  font-size: 0.82em;
+}
+
+.dt-radio-broadcast-grid .dt-wide {
+  grid-column: 1 / -1;
+}
+
+.dt-radio-on-air-toggle {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding-top: 18px;
+}
+
+.dt-radio-empty-broadcasts {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 110px;
 }
 
 @media (max-width: 980px) {
@@ -1222,8 +1658,15 @@
     }
 
   .dt-radio-face,
-  .dt-radio-control-grid {
+  .dt-radio-control-grid,
+  .dt-radio-console,
+  .dt-radio-access-layout {
     grid-template-columns: 1fr;
+  }
+
+  .dt-radio-tuner {
+    border-top: 1px solid rgba(143, 191, 150, 0.2);
+    border-left: 0;
   }
 
   .dt-biome-card dl {
@@ -1255,8 +1698,31 @@
     .dt-hunting-entry > div,
     .dt-radio-lock-row,
     .dt-radio-settings-grid,
-    .dt-radio-broadcast-grid {
+    .dt-radio-broadcast-grid,
+    .dt-radio-display-bank {
     grid-template-columns: 1fr;
+  }
+
+  .dt-radio-gm-tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .dt-radio-gm-tabs button {
+    min-width: 0;
+    padding: 7px 5px;
+  }
+
+  .dt-radio-broadcast > summary {
+    grid-template-columns: 10px minmax(0, 1fr) minmax(82px, auto) 16px;
+    gap: 8px;
+  }
+
+  .dt-radio-air-state {
+    display: none;
+  }
+
+  .dt-radio-broadcast > form {
+    padding-left: 14px;
   }
 
   .dt-hunting-entry > div,

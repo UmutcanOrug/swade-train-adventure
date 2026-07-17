@@ -48,7 +48,7 @@ const context = {
 };
 context.globalThis = context;
 vm.createContext(context);
-vm.runInContext(`${source}\n;globalThis.__radioTest = { normalizeRadioBroadcast, radioSignalAtFrequency, radioSignalPresentation, parseRadioResponses, normalizeRadioFrequency };`, context);
+vm.runInContext(`${source}\n;globalThis.__radioTest = { normalizeRadioBroadcast, radioSignalAtFrequency, radioSignalPresentation, parseRadioResponses, normalizeRadioFrequency, radioDialAngle };`, context);
 
 const radio = context.__radioTest;
 
@@ -64,6 +64,9 @@ test("frequency is clamped and rounded to one decimal step", () => {
   assert.equal(radio.normalizeRadioFrequency(79.94), 80);
   assert.equal(radio.normalizeRadioFrequency(96.44), 96.4);
   assert.equal(radio.normalizeRadioFrequency(120.5), 120);
+  assert.equal(radio.radioDialAngle(80), -140);
+  assert.equal(radio.radioDialAngle(100), 0);
+  assert.equal(radio.radioDialAngle(120), 140);
 });
 
 test("a nearby carrier reveals only its partial transmission", () => {
@@ -87,6 +90,24 @@ test("a nearby carrier reveals only its partial transmission", () => {
   assert.doesNotMatch(presentation.snippet, /complete hidden message/);
 });
 
+test("a feathered trace appears before the core signal range", () => {
+  const data = radioData({
+    id: "signal",
+    enabled: true,
+    frequency: 96.4,
+    signalRange: 1,
+    lockTolerance: 0.2,
+    biomeId: "tundra",
+    partialText: "Fort Veyr western line do not approach"
+  });
+  const signal = radio.radioSignalAtFrequency(data, 99.2);
+  const presentation = radio.radioSignalPresentation(signal);
+  assert.ok(signal);
+  assert.equal(signal.lockReady, false);
+  assert.ok(presentation.strength > 0);
+  assert.match(presentation.snippet, /Fort/);
+});
+
 test("exact tuning enables lock only in the configured biome and turn window", () => {
   const data = radioData({
     id: "signal",
@@ -105,6 +126,27 @@ test("exact tuning enables lock only in the configured biome and turn window", (
   data.route.biomeId = "tundra";
   data.currentTurn = 8;
   assert.equal(radio.radioSignalAtFrequency(data, 96.4), null);
+});
+
+test("exact tuning must stabilize before the roll becomes available", () => {
+  const data = radioData({
+    id: "signal",
+    enabled: true,
+    frequency: 96.4,
+    signalRange: 1.5,
+    lockTolerance: 0.2,
+    biomeId: "tundra",
+    skillName: "Electronics",
+    modifier: 1
+  });
+  const signal = radio.radioSignalAtFrequency(data, 96.4);
+  const tuning = radio.radioSignalPresentation(signal, { ready: false, progress: 0.55 });
+  const stable = radio.radioSignalPresentation(signal, { ready: true, progress: 1 });
+  assert.equal(tuning.stable, false);
+  assert.equal(tuning.stabilityProgress, 55);
+  assert.match(tuning.skillLabel, /Hold/);
+  assert.equal(stable.stable, true);
+  assert.match(stable.skillLabel, /Electronics/);
 });
 
 test("GM response lines retain labels and immediate outcomes", () => {

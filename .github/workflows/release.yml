@@ -10,6 +10,7 @@ on:
       - styles/**
       - templates/**
       - docs/**
+      - sounds/**
       - tests/**
       - README.md
       - CHANGELOG.md
@@ -49,6 +50,7 @@ jobs:
             styles \
             templates \
             docs \
+            sounds \
             README.md \
             CHANGELOG.md
 

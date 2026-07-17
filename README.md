@@ -18,10 +18,10 @@ Foundry VTT v13 icin SWADE Dominion tren yonetim modulu.
 - Settings sekmesinden GM current turn duzeltmesi
 - Population, Storage, Fuel ve Special wagon rolleri
 - Fuel icin Fuel Wagon cap, Food/Water/Amenities icin ortak Storage Wagon cap
-- Ortak 80.0-120.0 MHz Radio alicisi ve tum acik oyuncu panellerinde canli frekans senkronu
+- Mouse ile cevrilen 80.0-120.0 MHz Radio alicisi ve tum acik oyuncu panellerinde canli frekans senkronu
 - GM yayin editoru, biome/tur araligi, parca/tam mesaj, SWADE skill zari ve Raise bilgisi
 - GM signal-lock izinleri, oyuncu lock talebi, Radio Log ve yayin cevaplari
-- Noise, Approaching Signal ve Frequency Found icin yeniden baslamayan uc katmanli crossfade ses sistemi
+- Yerlesik Tier 1 Static, Tier 2 Close ve Tier 3 Understandable sesleriyle yeniden baslamayan uc katmanli crossfade sistemi
 - Advance Turn otomasyonu
 - GM tam yetki; oyuncular icin kontrollu Radio tuning, lock talebi ve izinli signal lock
 - Oyuncularin gorecegi kaynak/rota/vagon/grup detaylarini ayarlama
@@ -59,8 +59,8 @@ Eski `resource amount | title | text` satirlari okunmaya devam eder, ama miktar 
 
 Wagon cap sistemi: Population Wagon capacity toplam pop cap verir. Fuel Wagon capacity Fuel cap verir. Storage Wagon capacity Food, Water ve Amenities icin ortak depodur; bu uc resource'un toplami storage cap'i asamaz. Special Wagon resource veya pop cap vermez, not ve ozel kullanim icindir.
 
-Radio sekmesinde tum oyuncular ortak frekans dugmesini hareket ettirebilir ve Radio sekmesi acik olan diger oyuncular degisimi canli gorur. Sinyale yaklasildiginda sadece parca mesaj gorunur. Lock Signal zari yalnizca GM veya GM'in Signal-Lock Permission tiki verdigi oyuncu tarafindan atilabilir. Izni olmayan oyuncu aktorunu secip GM'e lock talebi gonderir. Basarili SWADE zari tam mesaji, Raise ise ek istihbarati acar.
+Radio sekmesinde tum oyuncular ortak frekans dugmesini mouse ile cevirir; mouse wheel ve yon tuslari ince ayar yapar. Radio sekmesi acik olan diger oyuncular degisimi canli gorur. Tasiyiciya yaklasirken zayif sinyal izi ve parca mesaj kelimeleri kademeli belirir. Dogru frekansta Lock Signal acilmadan once alici GM'in belirledigi sure boyunca sabit tutulur. Lock Signal zari yalnizca GM veya GM'in Signal-Lock Permission tiki verdigi oyuncu tarafindan atilabilir. Izni olmayan oyuncu aktorunu secip GM'e lock talebi gonderir. Basarili SWADE zari tam mesaji, Raise ise ek istihbarati acar.
 
-GM Radio Control bolumunden yayin frekansi, signal range, lock tolerance, biome, aktif tur araligi, source/faction, skill, modifier, parca/tam/Raise metinleri, cevaplar ve voice audio ayarlanir. Noise, Approaching Signal ve Frequency Found loop dosyalari Foundry audio file picker ile secilir. Uc loop Radio sekmesi acikken birlikte calisir; frekans degistikce ses seviyeleri birbirine gecerek degisir ve dosyalar bastan baslamaz. Radio sekmesinden cikilinca butun radyo sesleri durur.
+GM Radio Control bolumu Broadcasts, Receiver ve Access sekmelerine ayrilir. Yayinlar kapali ozet satirlarinda On Air durumu, frekans, biome ve source bilgisiyle listelenir; secilen yayin acilarak duzenlenir. Receiver sekmesinden lock deneme sayisi, stabilizasyon suresi, ses seviyesi ve uc loop dosyasi ayarlanir. Mod Tier 1 Static, Tier 2 Close ve Tier 3 Understandable seslerini varsayilan olarak getirir; klasor dugmeleri Foundry V13 FilePicker'i acar. Uc loop Radio sekmesi acikken birlikte calisir; frekans degistikce ses seviyeleri birbirine gecerek degisir ve dosyalar bastan baslamaz. Radio sekmesinden cikilinca butun radyo sesleri durur.
 
 Hazir biome event taslaklari `docs/scavenge-biome-events.txt` dosyasinda tutulur.

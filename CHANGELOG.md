@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.1
+
+- Replaced the frequency slider with a mouse-driven rotary tuning dial. Mouse wheel and arrow keys provide fine tuning.
+- Added a feathered trace range so signal strength and partial transcript words appear progressively before the core carrier range.
+- Added configurable signal stabilization time. Operators must hold the correct frequency steady before locking or requesting a lock.
+- Rebuilt GM Radio Control into Broadcasts, Receiver, and Access workspaces.
+- Changed broadcasts into compact expandable rows with clear On Air state, frequency, biome, and source summaries.
+- Replaced embedded audio controls with Foundry V13 FilePicker buttons and Foundry Sound playback.
+- Added built-in Tier 1 Static, Tier 2 Close, and Tier 3 Understandable radio audio loops with one-time migration for existing worlds.
+- Added desktop and narrow-window layout validation for the redesigned radio panel.
+
 ## 0.2.0
 
 - Added the shared 80.0-120.0 MHz Dominion Radio minigame.
