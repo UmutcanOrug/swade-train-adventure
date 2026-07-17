@@ -49,7 +49,7 @@
               <p>Turn {{summary.currentTurn}} / {{route.movementLabel}}</p>
             </div>
             {{#if isGM}}
-              <button type="button" class="dt-primary" data-advance-turn title="Advance Turn">
+              <button type="button" class="dt-primary" data-advance-turn title="Advance Turn" {{#unless summary.canAdvance}}disabled{{/unless}}>
                 <i class="fa-solid fa-forward-step"></i>
                 <span>Advance Turn</span>
               </button>
@@ -57,6 +57,19 @@
               <span class="dt-readonly"><i class="fa-solid fa-eye"></i> Read Only</span>
             {{/if}}
           </div>
+
+          <section class="dt-biome-card {{#if currentBiome.imageUrl}}has-image{{else}}no-image{{/if}}" {{#if currentBiome.imageUrl}}style="--dt-biome-image: url('{{currentBiome.imageUrl}}');"{{/if}}>
+            <div class="dt-biome-title">
+              <span>Current Biome</span>
+              <strong>{{currentBiome.name}}</strong>
+            </div>
+            <dl>
+              <div><dt>Food</dt><dd>{{summary.biomeFoodMultiplier}}</dd></div>
+              <div><dt>Water</dt><dd>{{summary.biomeWaterMultiplier}}</dd></div>
+              <div><dt>Fuel</dt><dd>{{summary.biomeFuelMultiplier}}</dd></div>
+              <div><dt>Amenities</dt><dd>{{summary.biomeAmenitiesMultiplier}}</dd></div>
+            </dl>
+          </section>
 
           <div class="dt-metrics-grid">
             <div class="dt-metric">
@@ -78,6 +91,14 @@
             <div class="dt-metric {{#if summary.overCapacityVisible}}dt-danger{{/if}}">
               <span>Population</span>
               <strong>{{summary.populationCapacityDisplay}}</strong>
+            </div>
+            <div class="dt-metric {{#if summary.storageOverCapVisible}}dt-danger{{/if}}">
+              <span>Storage Used</span>
+              <strong>{{summary.storageCapacityDisplay}}</strong>
+            </div>
+            <div class="dt-metric {{#if summary.fuelOverCapVisible}}dt-danger{{/if}}">
+              <span>Fuel Stored</span>
+              <strong>{{summary.fuelCapacityDisplay}}</strong>
             </div>
             <div class="dt-metric">
               <span>Fuel Next Turn</span>
@@ -121,7 +142,7 @@
           <div class="dt-command-row">
             <div>
               <h2>Wagons</h2>
-              <p>{{summary.activeWagons}} active / capacity {{summary.capacity}}</p>
+              <p>{{summary.activeWagons}} active / Pop {{summary.capacity}} / Storage {{summary.storageCapLabel}} / Fuel {{summary.fuelCapLabel}}</p>
             </div>
             {{#if isGM}}
               <button type="button" data-add-wagon title="Add Wagon">
@@ -147,10 +168,14 @@
                 <div class="dt-form-grid">
                   <label>
                     <span>Type</span>
-                    <input type="text" name="type" value="{{type}}" list="dt-wagon-types" {{#unless @root.isGM}}disabled{{/unless}}>
+                    <select name="role" {{#unless @root.isGM}}disabled{{/unless}}>
+                      {{#each roleOptions}}
+                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                      {{/each}}
+                    </select>
                   </label>
                   <label>
-                    <span>Population Capacity</span>
+                    <span>{{capacityLabel}}</span>
                     <input type="number" step="1" min="0" name="capacity" value="{{capacity}}" {{#unless @root.isGM}}disabled{{/unless}}>
                   </label>
                 </div>
@@ -192,15 +217,30 @@
           <div class="dt-record-list">
             {{#each groups}}
               <form class="dt-record" data-group-form="{{id}}">
-                <div class="dt-record-head">
-                  <label class="dt-record-title">
-                    <span>Group Name</span>
-                    <input type="text" name="name" value="{{name}}" {{#unless @root.isGM}}disabled{{/unless}}>
-                  </label>
-                  <label>
-                    <span>Count</span>
-                    <input type="number" step="1" min="0" name="count" value="{{count}}" {{#unless @root.isGM}}disabled{{/unless}}>
-                  </label>
+                <div class="dt-people-layout">
+                  <div class="dt-portrait">
+                    {{#if portraitUrl}}
+                      <img src="{{portraitUrl}}" alt="{{name}}">
+                    {{else}}
+                      <i class="fa-solid fa-user-group"></i>
+                    {{/if}}
+                  </div>
+                  <div class="dt-people-fields">
+                    <div class="dt-record-head">
+                      <label class="dt-record-title">
+                        <span>Group Name</span>
+                        <input type="text" name="name" value="{{name}}" {{#unless @root.isGM}}disabled{{/unless}}>
+                      </label>
+                      <label>
+                        <span>Count</span>
+                        <input type="number" step="1" min="0" name="count" value="{{count}}" {{#unless @root.isGM}}disabled{{/unless}}>
+                      </label>
+                    </div>
+                    <label class="dt-wide">
+                      <span>Portrait URL</span>
+                      <input type="text" name="portraitUrl" value="{{portraitUrl}}" placeholder="https://.../portrait.png" {{#unless @root.isGM}}disabled{{/unless}}>
+                    </label>
+                  </div>
                 </div>
                 <div class="dt-form-grid">
                   <label>
@@ -311,7 +351,7 @@
 
             <div class="dt-record-list">
               {{#each selectedMarket.items}}
-                <form class="dt-record dt-market-item" data-market-item-form="{{id}}" data-market-item-market="{{../id}}">
+                <form class="dt-record dt-market-item" data-market-item-form="{{id}}" data-market-item-market="{{@root.selectedMarket.id}}">
                   <div class="dt-record-head">
                     <label class="dt-record-title">
                       <span>Item Name</span>
@@ -347,8 +387,8 @@
                   {{#if @root.isGM}}
                     <div class="dt-record-actions">
                       <button type="submit" title="Save Item"><i class="fa-solid fa-floppy-disk"></i><span>Save</span></button>
-                      <button type="button" data-buy-market-item="{{id}}" data-buy-market="{{../id}}" title="Buy Item"><i class="fa-solid fa-cart-shopping"></i><span>Buy</span></button>
-                      <button type="button" class="dt-danger-button" data-delete-market-item="{{id}}" data-delete-market="{{../id}}" title="Delete Item"><i class="fa-solid fa-trash-can"></i></button>
+                      <button type="button" data-buy-market-item="{{id}}" data-buy-market="{{@root.selectedMarket.id}}" title="Buy Item"><i class="fa-solid fa-cart-shopping"></i><span>Buy</span></button>
+                      <button type="button" class="dt-danger-button" data-delete-market-item="{{id}}" data-delete-market="{{@root.selectedMarket.id}}" title="Delete Item"><i class="fa-solid fa-trash-can"></i></button>
                     </div>
                   {{/if}}
                 </form>
@@ -356,6 +396,325 @@
                 <p class="dt-empty">No supply lots.</p>
               {{/each}}
             </div>
+          {{/if}}
+        </section>
+      {{/if}}
+
+      {{#if (eq activeTab "scavenge")}}
+        <section class="dt-pane">
+          <div class="dt-command-row">
+            <div>
+              <h2>Scavenge</h2>
+              <p>Actor-driven SWADE-style rolls for train resources.</p>
+            </div>
+          </div>
+
+          <div class="dt-scavenge-grid">
+            {{#each scavengeCards}}
+              <form class="dt-panel dt-scavenge-card" data-scavenge-form="{{key}}">
+                <div class="dt-scavenge-card-head">
+                  <i class="fa-solid {{icon}}"></i>
+                  <div>
+                    <h2>{{label}}</h2>
+                    <p>{{defaultSkill}} / d{{defaultDie}}</p>
+                  </div>
+                </div>
+                <div class="dt-form-grid">
+                  <label>
+                    <span>Actor</span>
+                    <select name="actorId" {{#unless @root.isGM}}disabled{{/unless}}>
+                      <option value="">Select actor</option>
+                      {{#each @root.scavengeActors}}
+                        <option value="{{id}}">{{name}}</option>
+                      {{/each}}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Skill Name</span>
+                    <input type="text" name="skillName" value="{{defaultSkill}}" {{#unless @root.isGM}}disabled{{/unless}}>
+                  </label>
+                  <label>
+                    <span>Roll Die</span>
+                    <select name="rollDie" {{#unless @root.isGM}}disabled{{/unless}}>
+                      {{#each dieOptions}}
+                        <option value="{{sides}}" {{#if selected}}selected{{/if}}>d{{sides}}</option>
+                      {{/each}}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Modifier</span>
+                    <input type="text" inputmode="numeric" name="modifier" value="0" placeholder="+0" {{#unless @root.isGM}}disabled{{/unless}}>
+                  </label>
+                </div>
+                <label class="dt-check-inline">
+                  <input type="checkbox" name="useActorSkill" checked {{#unless @root.isGM}}disabled{{/unless}}>
+                  <span>Use actor skill die if found</span>
+                </label>
+                {{#if @root.isGM}}
+                  <div class="dt-record-actions">
+                    <button type="submit" title="Roll {{label}}">
+                      <i class="fa-solid fa-dice"></i>
+                      <span>Roll {{label}}</span>
+                    </button>
+                  </div>
+                {{/if}}
+              </form>
+            {{/each}}
+          </div>
+
+          <section class="dt-panel">
+            <div class="dt-panel-heading">
+              <h2>Recent Results</h2>
+              {{#if isGM}}
+                <button type="button" class="dt-danger-button" data-clear-scavenge-log title="Clear Results">
+                  <i class="fa-solid fa-broom"></i>
+                  <span>Clear</span>
+                </button>
+              {{/if}}
+            </div>
+            <div class="dt-hunting-log">
+              {{#each scavengeLog}}
+                <article class="dt-hunting-entry">
+                  <div>
+                    <strong>{{eventTitle}}</strong>
+                    <span>{{actorName}} / {{skillName}} / {{rollDisplay}}</span>
+                  </div>
+                  <p>{{eventText}}</p>
+                  <footer>
+                    <b>{{amountDisplay}}</b>
+                    {{#if secondaryDisplay}}<b>{{secondaryDisplay}}</b>{{/if}}
+                  </footer>
+                </article>
+              {{else}}
+                <p class="dt-empty">No scavenge rolls yet.</p>
+              {{/each}}
+            </div>
+          </section>
+        </section>
+      {{/if}}
+
+      {{#if (eq activeTab "radio")}}
+        <section class="dt-pane dt-radio-pane">
+          <div class="dt-command-row">
+            <div>
+              <h2>Dominion Radio</h2>
+              <p>Shared receiver / Turn {{summary.currentTurn}} / Lock attempts {{radio.attemptsDisplay}}</p>
+            </div>
+            {{#if isGM}}
+              <button type="button" data-reset-radio-attempts title="Reset Lock Attempts">
+                <i class="fa-solid fa-rotate-left"></i>
+                <span>Reset Attempts</span>
+              </button>
+            {{/if}}
+          </div>
+
+          <section class="dt-radio-receiver" data-radio-receiver>
+            <div class="dt-radio-face">
+              <div class="dt-radio-readout">
+                <span>RECEIVER BAND 80-120</span>
+                <strong data-radio-frequency-display>{{radio.frequency}} MHz</strong>
+                <small data-radio-tuned-by>Tuned by {{radio.tunedBy}}</small>
+              </div>
+              <div class="dt-radio-meter" aria-label="Signal strength">
+                <div class="dt-radio-meter-track"><span data-radio-strength-fill style="width: {{radio.signal.strength}}%;"></span></div>
+                <b data-radio-strength-label>{{radio.signal.strengthLabel}} / {{radio.signal.strength}}%</b>
+              </div>
+            </div>
+
+            <div class="dt-radio-tuner">
+              <input type="range" min="{{radio.minFrequency}}" max="{{radio.maxFrequency}}" step="{{radio.frequencyStep}}" value="{{radio.frequencyRaw}}" data-radio-frequency aria-label="Radio frequency">
+              <div class="dt-radio-scale" aria-hidden="true">
+                <span>80</span><span>90</span><span>100</span><span>110</span><span>120</span>
+              </div>
+            </div>
+
+            <div class="dt-radio-transcript">
+              <span>LIVE TRANSCRIPT</span>
+              <p data-radio-transcript>{{radio.signal.snippet}}</p>
+            </div>
+
+            <div class="dt-radio-lock-row">
+              <label>
+                <span>Operator Actor</span>
+                <select name="radioActorId">
+                  <option value="">Select actor</option>
+                  {{#each radioActors}}
+                    <option value="{{id}}">{{name}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <div class="dt-radio-lock-status">
+                <span>Required Roll</span>
+                <strong data-radio-skill>{{radio.signal.skillLabel}}</strong>
+              </div>
+              {{#if radio.canLock}}
+                <button type="button" class="dt-primary" data-perform-radio-lock disabled title="Lock Signal">
+                  <i class="fa-solid fa-tower-broadcast"></i>
+                  <span>Lock Signal</span>
+                </button>
+              {{else}}
+                <button type="button" data-request-radio-lock data-request-pending="{{radio.requestPending}}" disabled title="Request GM Lock Permission">
+                  <i class="fa-solid fa-hand"></i>
+                  <span>{{#if radio.requestPending}}Request Pending{{else}}Request Lock{{/if}}</span>
+                </button>
+              {{/if}}
+            </div>
+          </section>
+
+          <section class="dt-panel">
+            <div class="dt-panel-heading">
+              <h2>Radio Log</h2>
+              {{#if isGM}}
+                <button type="button" class="dt-danger-button" data-clear-radio-log title="Clear Radio Log">
+                  <i class="fa-solid fa-broom"></i><span>Clear</span>
+                </button>
+              {{/if}}
+            </div>
+            <div class="dt-radio-log">
+              {{#each radioLog}}
+                <article class="dt-radio-log-entry dt-radio-outcome-{{outcome}}">
+                  <header>
+                    <div>
+                      <strong>{{broadcastTitle}}</strong>
+                      <span>{{frequencyDisplay}} / Turn {{turn}} / {{actorName}}</span>
+                    </div>
+                    <b>{{outcomeLabel}}</b>
+                  </header>
+                  <p>{{message}}</p>
+                  {{#if raiseText}}<aside><strong>Raise:</strong> {{raiseText}}</aside>{{/if}}
+                  {{#if responseSent}}
+                    <footer><i class="fa-solid fa-paper-plane"></i> {{responseSent}}{{#if responseOutcome}} - {{responseOutcome}}{{/if}}</footer>
+                  {{else}}
+                    {{#if canRespond}}
+                      <footer class="dt-radio-responses">
+                        {{#each responses}}
+                          <button type="button" data-radio-log="{{../id}}" data-radio-response="{{index}}" title="Transmit Response">
+                            <i class="fa-solid fa-paper-plane"></i><span>{{label}}</span>
+                          </button>
+                        {{/each}}
+                      </footer>
+                    {{/if}}
+                  {{/if}}
+                </article>
+              {{else}}
+                <p class="dt-empty">No radio lock attempts yet.</p>
+              {{/each}}
+            </div>
+          </section>
+
+          {{#if isGM}}
+            <section class="dt-radio-gm-band">
+              <div class="dt-command-row">
+                <div>
+                  <h2>GM Radio Control</h2>
+                  <p>Permissions, requests, audio, and hidden broadcasts</p>
+                </div>
+                <button type="button" data-add-radio-broadcast title="Add Broadcast">
+                  <i class="fa-solid fa-plus"></i><span>Add Broadcast</span>
+                </button>
+              </div>
+
+              <div class="dt-radio-control-grid">
+                <section class="dt-panel">
+                  <div class="dt-panel-heading"><h2>Signal-Lock Permission</h2></div>
+                  <div class="dt-radio-user-list">
+                    {{#each radioUsers}}
+                      <label>
+                        <input type="checkbox" data-radio-permission="{{id}}" {{checked canLock}}>
+                        <span>{{name}}</span>
+                        <small>{{#if active}}Online{{else}}Offline{{/if}}{{#if pending}} / Request pending{{/if}}</small>
+                      </label>
+                    {{else}}
+                      <p class="dt-empty">No player users found.</p>
+                    {{/each}}
+                  </div>
+                </section>
+
+                <section class="dt-panel">
+                  <div class="dt-panel-heading"><h2>Pending Lock Requests</h2></div>
+                  <div class="dt-radio-request-list">
+                    {{#each radioRequests}}
+                      <article>
+                        <div><strong>{{userName}}</strong><span>{{actorName}} / {{frequencyDisplay}}</span></div>
+                        <div class="dt-inline-actions">
+                          <button type="button" data-resolve-radio-request="{{id}}" data-radio-grant="true" title="Grant Permission"><i class="fa-solid fa-check"></i></button>
+                          <button type="button" class="dt-danger-button" data-resolve-radio-request="{{id}}" data-radio-grant="false" title="Deny Request"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                      </article>
+                    {{else}}
+                      <p class="dt-empty">No pending requests.</p>
+                    {{/each}}
+                  </div>
+                </section>
+              </div>
+
+              <form class="dt-panel" data-radio-settings-form>
+                <div class="dt-panel-heading">
+                  <h2>Receiver Audio</h2>
+                  <button type="submit" title="Save Radio Settings"><i class="fa-solid fa-floppy-disk"></i><span>Save</span></button>
+                </div>
+                <div class="dt-radio-settings-grid">
+                  <label>
+                    <span>Lock Attempts / Turn</span>
+                    <input type="number" name="lockAttemptsPerTurn" min="0" max="20" step="1" value="{{radio.settings.lockAttemptsPerTurn}}">
+                  </label>
+                  <label>
+                    <span>Radio Volume</span>
+                    <input type="range" name="volume" min="0" max="1" step="0.05" value="{{radio.settings.volume}}">
+                  </label>
+                  <label class="dt-radio-sound-field">
+                    <span>Noise Loop</span>
+                    <div><file-picker name="noiseSoundUrl" type="audio" value="{{radio.settings.noiseSoundUrl}}"></file-picker><button type="button" data-radio-test-sound="noiseSoundUrl" title="Test Noise"><i class="fa-solid fa-play"></i></button></div>
+                  </label>
+                  <label class="dt-radio-sound-field">
+                    <span>Approaching Signal Loop</span>
+                    <div><file-picker name="approachSoundUrl" type="audio" value="{{radio.settings.approachSoundUrl}}"></file-picker><button type="button" data-radio-test-sound="approachSoundUrl" title="Test Approach"><i class="fa-solid fa-play"></i></button></div>
+                  </label>
+                  <label class="dt-radio-sound-field">
+                    <span>Frequency Found Loop</span>
+                    <div><file-picker name="foundSoundUrl" type="audio" value="{{radio.settings.foundSoundUrl}}"></file-picker><button type="button" data-radio-test-sound="foundSoundUrl" title="Test Found"><i class="fa-solid fa-play"></i></button></div>
+                  </label>
+                </div>
+              </form>
+
+              <div class="dt-radio-broadcast-list">
+                {{#each radioBroadcasts}}
+                  <form class="dt-record dt-radio-broadcast" data-radio-broadcast-form="{{id}}">
+                    <div class="dt-record-head">
+                      <label class="dt-record-title">
+                        <span>GM Broadcast Name</span>
+                        <input type="text" name="title" value="{{title}}">
+                      </label>
+                      <label class="dt-toggle"><input type="checkbox" name="enabled" {{checked enabled}}><span>On Air</span></label>
+                    </div>
+                    <div class="dt-radio-broadcast-grid">
+                      <label><span>Frequency</span><input type="number" name="frequency" min="80" max="120" step="0.1" value="{{frequencyDisplay}}"></label>
+                      <label><span>Signal Range</span><input type="number" name="signalRange" min="0.1" max="10" step="0.1" value="{{signalRange}}"></label>
+                      <label><span>Lock Tolerance</span><input type="number" name="lockTolerance" min="0.1" max="2" step="0.1" value="{{lockTolerance}}"></label>
+                      <label><span>Source / Faction</span><input type="text" name="source" value="{{source}}"></label>
+                      <label><span>Biome</span><select name="biomeId">{{#each biomeOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select></label>
+                      <label><span>Start Turn</span><input type="number" name="startTurn" min="1" step="1" value="{{startTurn}}"></label>
+                      <label><span>End Turn (0 = none)</span><input type="number" name="endTurn" min="0" step="1" value="{{endTurn}}"></label>
+                      <label><span>Skill Name</span><input type="text" name="skillName" value="{{skillName}}"></label>
+                      <label><span>Fallback Die</span><select name="fallbackDie">{{#each dieOptions}}<option value="{{sides}}" {{#if selected}}selected{{/if}}>d{{sides}}</option>{{/each}}</select></label>
+                      <label><span>Modifier</span><input type="text" inputmode="numeric" name="modifier" value="{{modifier}}" placeholder="+0"></label>
+                    </div>
+                    <label class="dt-wide"><span>Partial Transmission</span><textarea name="partialText" rows="2">{{partialText}}</textarea></label>
+                    <label class="dt-wide"><span>Full Transmission</span><textarea name="fullText" rows="4">{{fullText}}</textarea></label>
+                    <label class="dt-wide"><span>Raise Intelligence</span><textarea name="raiseText" rows="2">{{raiseText}}</textarea></label>
+                    <label class="dt-wide dt-radio-sound-field"><span>Decoded Voice / Message Audio</span><file-picker name="audioUrl" type="audio" value="{{audioUrl}}"></file-picker></label>
+                    <label class="dt-wide"><span>Responses (label | immediate result)</span><textarea name="responseLines" rows="4">{{responseLines}}</textarea></label>
+                    <label class="dt-check-inline"><input type="checkbox" name="oneShot" {{checked oneShot}}><span>Go off air after a successful lock</span></label>
+                    <div class="dt-record-actions">
+                      <button type="submit" title="Save Broadcast"><i class="fa-solid fa-floppy-disk"></i><span>Save</span></button>
+                      <button type="button" class="dt-danger-button" data-delete-radio-broadcast="{{id}}" title="Delete Broadcast"><i class="fa-solid fa-trash-can"></i></button>
+                    </div>
+                  </form>
+                {{else}}
+                  <p class="dt-empty">No broadcasts configured.</p>
+                {{/each}}
+              </div>
+            </section>
           {{/if}}
         </section>
       {{/if}}
@@ -380,6 +739,14 @@
                 <input type="text" name="destinationName" value="{{route.destinationName}}" {{#unless isGM}}disabled{{/unless}}>
               </label>
               <label>
+                <span>Current Biome</span>
+                <select name="biomeId" {{#unless isGM}}disabled{{/unless}}>
+                  {{#each biomeOptions}}
+                    <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <label>
                 <span>Remaining Turns</span>
                 <input type="number" step="1" min="0" name="remainingTurns" value="{{route.remainingInput}}" {{#unless isGM}}disabled{{/unless}}>
               </label>
@@ -401,6 +768,60 @@
         </section>
       {{/if}}
 
+      {{#if (eq activeTab "events")}}
+        <section class="dt-pane">
+          <div class="dt-command-row">
+            <div>
+              <h2>Events</h2>
+              <p>GM editable Scavenge event pools.</p>
+            </div>
+          </div>
+
+          <div class="dt-market-tabs">
+            {{#each eventCategories}}
+              <button type="button" class="{{#if active}}active{{/if}}" data-event-category="{{key}}" title="{{label}}">
+                <i class="fa-solid {{icon}}"></i>
+                <span>{{label}}</span>
+              </button>
+            {{/each}}
+          </div>
+
+          <div class="dt-market-tabs dt-event-biome-tabs">
+            {{#each eventBiomes}}
+              <button type="button" class="{{#if active}}active{{/if}}" data-event-biome="{{id}}" title="{{name}}">
+                <i class="fa-solid fa-map-location-dot"></i>
+                <span>{{name}}</span>
+              </button>
+            {{/each}}
+          </div>
+
+          <div class="dt-market-tabs dt-event-tier-tabs">
+            {{#each eventTierFilters}}
+              <button type="button" class="{{#if active}}active{{/if}}" data-event-tier-filter="{{tier}}" title="{{mood}}">
+                <span>{{label}}</span>
+              </button>
+            {{/each}}
+          </div>
+
+          <form class="dt-panel dt-events-form" data-events-form="{{selectedEventCategory.key}}" data-events-biome="{{selectedEventBiome.id}}">
+            <div class="dt-panel-heading">
+              <h2>{{selectedEventCategory.label}} / {{selectedEventBiome.name}} Events</h2>
+              <button type="submit" title="Save Events"><i class="fa-solid fa-floppy-disk"></i><span>Save Events</span></button>
+            </div>
+            <p class="dt-format-note">Line format: title | text. Reward Roll controls how much resource is gained or lost. Old resource amount | title | text lines still work.</p>
+            <div class="dt-events-tier-list">
+              {{#each selectedEventTiers}}
+                <label class="dt-event-tier">
+                  <span>Tier {{tier}} / {{label}}</span>
+                  <input type="text" data-event-reward-tier="{{tier}}" value="{{rewardFormula}}" placeholder="Reward Roll, e.g. 10x6d10" title="Reward Roll">
+                  <textarea rows="8" data-event-tier="{{tier}}">{{lines}}</textarea>
+                </label>
+              {{/each}}
+            </div>
+          </form>
+        </section>
+      {{/if}}
+
       {{#if (eq activeTab "settings")}}
         <section class="dt-pane">
           <div class="dt-command-row">
@@ -413,12 +834,24 @@
           <form class="dt-panel" data-settings-form>
             <div class="dt-settings-grid">
               <label>
+                <span>Current Turn</span>
+                <input type="number" step="1" min="1" name="currentTurn" value="{{summary.currentTurn}}">
+              </label>
+              <label>
                 <span>Base Fuel / Turn</span>
                 <input type="number" step="0.01" min="0" name="baseFuelPerTurn" value="{{settings.baseFuelPerTurn}}">
               </label>
               <label>
                 <span>Fuel Multiplier / Wagon</span>
                 <input type="number" step="0.01" min="0" name="fuelMultiplierPerWagon" value="{{settings.fuelMultiplierPerWagon}}">
+              </label>
+              <label>
+                <span>Raise Extra Dice</span>
+                <input type="number" step="1" min="0" name="raiseExtraDice" value="{{settings.raiseExtraDice}}">
+              </label>
+              <label>
+                <span>Raise Every</span>
+                <input type="number" step="1" min="1" name="raiseEvery" value="{{settings.raiseEvery}}">
               </label>
               <label>
                 <span>Default Food / Person</span>
@@ -442,9 +875,32 @@
               </label>
             </div>
 
+            <section class="dt-biome-settings">
+              <div class="dt-panel-heading">
+                <h2>Biome Multipliers</h2>
+              </div>
+              <div class="dt-biome-settings-head">
+                <span>Biome</span>
+                <span>Image URL</span>
+                <span>Food</span>
+                <span>Water</span>
+                <span>Fuel</span>
+                <span>Amenities</span>
+              </div>
+              {{#each biomes}}
+                <div class="dt-biome-row" data-biome-row="{{id}}">
+                  <input type="text" name="biomeName" value="{{name}}">
+                  <input type="text" name="biomeImageUrl" value="{{imageUrl}}" placeholder="https://.../biome.png">
+                  <input type="number" step="0.01" min="0" name="biomeFoodMultiplier" value="{{foodMultiplier}}">
+                  <input type="number" step="0.01" min="0" name="biomeWaterMultiplier" value="{{waterMultiplier}}">
+                  <input type="number" step="0.01" min="0" name="biomeFuelMultiplier" value="{{fuelMultiplier}}">
+                  <input type="number" step="0.01" min="0" name="biomeAmenitiesMultiplier" value="{{amenitiesMultiplier}}">
+                </div>
+              {{/each}}
+            </section>
+
             <div class="dt-check-grid">
               <label><input type="checkbox" name="allowNegativeResources" {{checked settings.allowNegativeResources}}> <span>Allow negative resources</span></label>
-              <label><input type="checkbox" name="consumeFuelWhileStopped" {{checked settings.consumeFuelWhileStopped}}> <span>Consume fuel while stopped</span></label>
               <label><input type="checkbox" name="playersCanOpenPanel" {{checked settings.playersCanOpenPanel}}> <span>Players can open panel</span></label>
               <label><input type="checkbox" name="showTalionToPlayers" {{checked settings.showTalionToPlayers}}> <span>Show Talion to players</span></label>
               <label><input type="checkbox" name="playersSeeExactResources" {{checked settings.playersSeeExactResources}}> <span>Players see exact resources</span></label>
@@ -462,9 +918,4 @@
     </main>
   </div>
 
-  <datalist id="dt-wagon-types">
-    {{#each wagonTypeSuggestions}}
-      <option value="{{this}}"></option>
-    {{/each}}
-  </datalist>
 </div>
