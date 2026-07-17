@@ -27,6 +27,7 @@ const RADIO_REQUEST_LIMIT = 20;
 const PLAYER_RADIO_ACTIONS = new Set([
   "tuneRadio",
   "adjustRadioGain",
+  "syncRadioPlayback",
   "requestRadioLock",
   "performRadioLock",
   "transmitRadioResponse"
@@ -1019,6 +1020,7 @@ function activateRadioListeners(root) {
     });
 
     updateRadioReceiverDom(root, liveRadioFrequency, liveRadioGain);
+    ensureSharedRadioPlaybackSession();
   } else {
     stopRadioAudio();
   }
@@ -1616,6 +1618,9 @@ async function processAction(action, payload, userId) {
     case "adjustRadioGain":
       adjustRadioGain(data, payload, user);
       break;
+    case "syncRadioPlayback":
+      syncRadioPlaybackSession(data);
+      break;
     case "requestRadioLock":
       requestRadioLock(data, payload, user);
       break;
@@ -1636,6 +1641,7 @@ async function processAction(action, payload, userId) {
       break;
     case "deleteRadioBroadcast":
       deleteById(data.radio.broadcasts, payload.id);
+      syncRadioPlaybackSession(data);
       break;
     case "setRadioPermission":
       setRadioPermission(data, payload);
@@ -1818,10 +1824,39 @@ function clearScavengeLog(data) {
   data.huntingLog = [];
 }
 
+function ensureSharedRadioPlaybackSession() {
+  const data = getWorldData();
+  if (data.radio.poweredOn === false) return;
+  const signal = radioSignalAtFrequency(data, data.radio.frequency, data.radio.gain);
+  const connectionKey = signal?.frequencyReady ? radioBroadcastPlaybackKey(signal.broadcast) : "";
+  if (!connectionKey || cleanString(data.radio.playbackSession?.connectionKey) === connectionKey) return;
+  sendAction("syncRadioPlayback", {}).catch(() => {});
+}
+
+function syncRadioPlaybackSession(data, random = Math.random, now = radioServerTime()) {
+  const signal = radioSignalAtFrequency(data, data.radio.frequency, data.radio.gain);
+  const connectionKey = signal?.frequencyReady ? radioBroadcastPlaybackKey(signal.broadcast) : "";
+  const current = data.radio.playbackSession || {};
+  if (!connectionKey) {
+    data.radio.playbackSession = defaultRadioPlaybackSession();
+    return data.radio.playbackSession;
+  }
+  if (cleanString(current.connectionKey) === connectionKey && cleanString(current.id)) return current;
+
+  data.radio.playbackSession = {
+    id: randomId(),
+    connectionKey,
+    position: clamp(toNumber(random(), 0), 0, 0.999999),
+    startedAt: Math.max(0, toNumber(now, radioServerTime()))
+  };
+  return data.radio.playbackSession;
+}
+
 function tuneRadio(data, payload, user) {
   ensureRadioPowered(data);
   data.radio.frequency = normalizeRadioFrequency(payload.frequency);
   data.radio.lastTunedBy = user.name || "Operator";
+  syncRadioPlaybackSession(data);
   liveRadioFrequency = data.radio.frequency;
   liveRadioTunedBy = data.radio.lastTunedBy;
 }
@@ -1887,6 +1922,7 @@ function updateRadioSettings(data, payload) {
 
 function setRadioPower(data, payload) {
   data.radio.poweredOn = Boolean(payload.poweredOn);
+  syncRadioPlaybackSession(data);
 }
 
 function ensureRadioPowered(data) {
@@ -1898,6 +1934,7 @@ function updateRadioBroadcast(data, payload) {
   if (!broadcast) throw new Error("Radio broadcast not found.");
   const normalized = normalizeRadioBroadcast({ ...broadcast, ...payload, responses: parseRadioResponses(payload.responseLines) });
   Object.assign(broadcast, normalized, { id: broadcast.id });
+  syncRadioPlaybackSession(data);
 }
 
 async function performRadioLock(data, payload, user) {
@@ -1968,6 +2005,7 @@ async function performRadioLock(data, payload, user) {
   data.radio.log.unshift(entry);
   data.radio.log = data.radio.log.slice(0, RADIO_LOG_LIMIT);
   if (roll.success && broadcast.oneShot) broadcast.enabled = false;
+  syncRadioPlaybackSession(data);
 
   await saveWorldData(data, "performRadioLock");
   await createRadioChat(entry, actor);
@@ -2444,26 +2482,67 @@ function syncRadioAmbient(data, signal, stable = false) {
           approach: volume * intensity,
           found: 0
         };
-  const sources = {
-    noise: data.radio.settings.noiseSoundUrl,
-    approach: data.radio.settings.approachSoundUrl,
-    found: radioTier3Source(data, signal)
-  };
-
-  for (const [kind, source] of Object.entries(sources)) ensureRadioAmbientTrack(kind, source);
+  const tier3 = radioTier3TrackConfig(data, signal);
+  ensureRadioAmbientTrack("noise", data.radio.settings.noiseSoundUrl);
+  ensureRadioAmbientTrack("approach", data.radio.settings.approachSoundUrl);
+  ensureRadioAmbientTrack("found", tier3.url, tier3);
   crossfadeRadioTracks(targets, 450);
 }
 
 function radioTier3Source(data, signal) {
-  if (signal?.frequencyReady) {
-    const override = cleanString(signal.broadcast?.audioUrl);
-    if (override) return override;
-  }
-  return cleanString(data.radio.settings.foundSoundUrl);
+  return radioTier3TrackConfig(data, signal).url;
 }
 
-async function ensureRadioAmbientTrack(kind, source) {
+function radioTier3TrackConfig(data, signal) {
+  if (signal?.frequencyReady) {
+    const override = cleanString(signal.broadcast?.audioUrl);
+    const session = data.radio.playbackSession || {};
+    const broadcastKey = radioBroadcastPlaybackKey(signal.broadcast);
+    if (override && cleanString(session.connectionKey) === broadcastKey && cleanString(session.id)) {
+      return {
+        url: override,
+        connectionKey: `session:${session.id}`,
+        synchronized: true,
+        playbackPosition: clamp(toNumber(session.position, 0), 0, 0.999999),
+        playbackStartedAt: Math.max(0, toNumber(session.startedAt, 0))
+      };
+    }
+  }
+  return {
+    url: cleanString(data.radio.settings.foundSoundUrl),
+    connectionKey: "global-tier-3",
+    synchronized: false,
+    playbackPosition: 0,
+    playbackStartedAt: 0
+  };
+}
+
+function radioBroadcastPlaybackKey(broadcast) {
+  const id = cleanString(broadcast?.id);
+  const source = cleanString(broadcast?.audioUrl);
+  return id && source ? `broadcast:${id}:${source}` : "";
+}
+
+function radioServerTime() {
+  const serverTime = Number(game.time?.serverTime);
+  return Number.isFinite(serverTime) ? serverTime : Date.now();
+}
+
+function synchronizedRadioStartOffset(duration, position, startedAt, now = radioServerTime()) {
+  const seconds = Number(duration);
+  if (!Number.isFinite(seconds) || seconds <= 1) return 0;
+  const wholeSeconds = Math.max(1, Math.floor(seconds));
+  const randomOffset = Math.floor(clamp(toNumber(position, 0), 0, 0.999999) * wholeSeconds);
+  const elapsed = Math.max(0, (toNumber(now, 0) - Math.max(0, toNumber(startedAt, 0))) / 1000);
+  return Math.round(((randomOffset + elapsed) % seconds) * 1000) / 1000;
+}
+
+async function ensureRadioAmbientTrack(kind, source, options = {}) {
   const url = cleanString(source);
+  const connectionKey = cleanString(options.connectionKey);
+  const synchronized = Boolean(options.synchronized);
+  const playbackPosition = clamp(toNumber(options.playbackPosition, 0), 0, 0.999999);
+  const playbackStartedAt = Math.max(0, toNumber(options.playbackStartedAt, 0));
   const current = radioAmbientTracks.get(kind);
   if (!url) {
     if (current) {
@@ -2473,9 +2552,13 @@ async function ensureRadioAmbientTrack(kind, source) {
     }
     return;
   }
-  if (current?.url === url) {
+  if (current?.url === url && current.connectionKey === connectionKey) {
     if (current.sound?.loaded && !current.sound.playing) {
-      current.sound.play({ loop: true, volume: uiState.radioMuted ? 0 : current.targetVolume || 0 }).catch(() => {});
+      current.sound.play({
+        loop: true,
+        volume: uiState.radioMuted ? 0 : current.targetVolume || 0,
+        offset: current.startOffset || 0
+      }).catch(() => {});
     }
     return;
   }
@@ -2487,7 +2570,17 @@ async function ensureRadioAmbientTrack(kind, source) {
   const SoundClass = foundry?.audio?.Sound;
   if (!SoundClass) return;
   const sound = new SoundClass(url, { context: game.audio?.interface });
-  const track = { sound, url, targetVolume: 0, disposed: false };
+  const track = {
+    sound,
+    url,
+    connectionKey,
+    synchronized,
+    playbackPosition,
+    playbackStartedAt,
+    startOffset: 0,
+    targetVolume: 0,
+    disposed: false
+  };
   radioAmbientTracks.set(kind, track);
   try {
     await sound.load();
@@ -2495,7 +2588,10 @@ async function ensureRadioAmbientTrack(kind, source) {
       await sound.stop();
       return;
     }
-    await sound.play({ loop: true, volume: 0 });
+    track.startOffset = track.synchronized
+      ? synchronizedRadioStartOffset(sound.duration, track.playbackPosition, track.playbackStartedAt)
+      : 0;
+    await sound.play({ loop: true, volume: 0, offset: track.startOffset });
     if (track.targetVolume > 0 && !uiState.radioMuted) await sound.fade(track.targetVolume, { duration: 450, type: "linear" });
   } catch (_error) {
     if (radioAmbientTracks.get(kind) === track) radioAmbientTracks.delete(kind);
@@ -3323,6 +3419,7 @@ async function advanceTurn(data) {
   }
   if (!data.route.moving) report.warnings.push("Train is stopped; route did not progress.");
   if (data.route.moving && data.route.remainingTurns <= 0) report.warnings.push("Route destination reached.");
+  syncRadioPlaybackSession(data);
 
   await saveWorldData(data, "advanceTurn");
   await createTurnChat(data, report);
@@ -3738,6 +3835,7 @@ function defaultRadioData() {
     gain: RADIO_DEFAULT_GAIN,
     lastTunedBy: "",
     poweredOn: true,
+    playbackSession: defaultRadioPlaybackSession(),
     permissions: {},
     requests: [],
     attempts: [],
@@ -3750,6 +3848,15 @@ function defaultRadioData() {
       ...RADIO_DEFAULT_AUDIO,
       audioDefaultsApplied: true
     }
+  };
+}
+
+function defaultRadioPlaybackSession() {
+  return {
+    id: "",
+    connectionKey: "",
+    position: 0,
+    startedAt: 0
   };
 }
 
@@ -4018,12 +4125,22 @@ function normalizeRadioData(raw, fallback = defaultRadioData()) {
     gain: normalizeRadioGain(source.gain),
     lastTunedBy: cleanString(source.lastTunedBy),
     poweredOn: source.poweredOn === undefined ? true : Boolean(source.poweredOn),
+    playbackSession: normalizeRadioPlaybackSession(source.playbackSession),
     permissions,
     requests: (Array.isArray(source.requests) ? source.requests : []).map(normalizeRadioRequest).filter(Boolean).slice(0, RADIO_REQUEST_LIMIT),
     attempts: (Array.isArray(source.attempts) ? source.attempts : []).map(normalizeRadioAttempt).filter(Boolean).slice(-100),
     log: (Array.isArray(source.log) ? source.log : []).map(normalizeRadioLogEntry).filter(Boolean).slice(0, RADIO_LOG_LIMIT),
     broadcasts: (Array.isArray(source.broadcasts) ? source.broadcasts : fallback.broadcasts).map(normalizeRadioBroadcast),
     settings
+  };
+}
+
+function normalizeRadioPlaybackSession(item) {
+  return {
+    id: cleanString(item?.id),
+    connectionKey: cleanString(item?.connectionKey),
+    position: clamp(toNumber(item?.position, 0), 0, 0.999999),
+    startedAt: Math.max(0, toNumber(item?.startedAt, 0))
   };
 }
 

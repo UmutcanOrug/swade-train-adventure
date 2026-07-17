@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.5
+
+- Broadcast Tier 3 Override audio now creates one shared random playback position each time the receiver reconnects to that broadcast.
+- All clients use Foundry's synchronized server clock, so players viewing the Radio tab hear the same part of the track even when their audio finishes loading at different times or they open the tab later.
+- Remaining tuned to the same broadcast, adjusting Gain, rerendering the panel, muting, and unmuting no longer choose a new position.
+- Global receiver loops continue starting normally; random offsets apply only to per-broadcast override audio.
+
 ## 0.2.4
 
 - Changed per-broadcast audio from a post-roll decoded-message one-shot into a Broadcast Tier 3 Override.

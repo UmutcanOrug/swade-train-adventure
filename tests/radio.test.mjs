@@ -38,6 +38,7 @@ const context = {
     keybindings: { register() {} },
     settings: { register() {}, get: () => ({}), set: async () => {} },
     socket: { on() {}, emit() {} },
+    time: { serverTime: 1_000_000 },
     user: { id: "gm", name: "GM", isGM: true },
     users: { contents: [] }
   },
@@ -48,19 +49,22 @@ const context = {
 };
 context.globalThis = context;
 vm.createContext(context);
-vm.runInContext(`${source}\n;globalThis.__radioTest = { normalizeRadioBroadcast, radioSignalAtFrequency, radioSignalPresentation, radioPoweredOffPresentation, ensureRadioPowered, ensureRadioSignalAligned, parseRadioResponses, normalizeRadioFrequency, normalizeRadioGain, radioDialAngle, radioActorOptions, radioTier3Source };`, context);
+vm.runInContext(`${source}\n;globalThis.__radioTest = { normalizeRadioBroadcast, radioSignalAtFrequency, radioSignalPresentation, radioPoweredOffPresentation, ensureRadioPowered, ensureRadioSignalAligned, parseRadioResponses, normalizeRadioFrequency, normalizeRadioGain, radioDialAngle, radioActorOptions, radioTier3Source, radioTier3TrackConfig, syncRadioPlaybackSession, synchronizedRadioStartOffset };`, context);
 
 const radio = context.__radioTest;
 
 function radioData(broadcast) {
+  const normalized = radio.normalizeRadioBroadcast(broadcast);
   return {
     currentTurn: 5,
     route: { biomeId: "tundra" },
     radio: {
       poweredOn: true,
+      frequency: normalized.frequency,
       gain: 3,
+      playbackSession: { id: "", connectionKey: "", position: 0, startedAt: 0 },
       settings: { foundSoundUrl: "modules/swade-dominion-train/sounds/radio/default-tier-3.mp3" },
-      broadcasts: [radio.normalizeRadioBroadcast(broadcast)]
+      broadcasts: [normalized]
     }
   };
 }
@@ -228,13 +232,56 @@ test("broadcast audio replaces Tier 3 only after its carrier is acquired", () =>
     radio.radioTier3Source(data, trace),
     "modules/swade-dominion-train/sounds/radio/default-tier-3.mp3"
   );
+  const session = radio.syncRadioPlaybackSession(data, () => 0.5, 1_000_000);
   assert.equal(radio.radioTier3Source(data, carrier), "worlds/dominion/audio/fort-veyr-message.mp3");
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(radio.radioTier3TrackConfig(data, carrier))),
+    {
+      url: "worlds/dominion/audio/fort-veyr-message.mp3",
+      connectionKey: `session:${session.id}`,
+      synchronized: true,
+      playbackPosition: 0.5,
+      playbackStartedAt: 1_000_000
+    }
+  );
 
   carrier.broadcast.audioUrl = "";
   assert.equal(
     radio.radioTier3Source(data, carrier),
     "modules/swade-dominion-train/sounds/radio/default-tier-3.mp3"
   );
+});
+
+test("broadcast music uses one shared random position and server clock", () => {
+  const firstClient = radio.synchronizedRadioStartOffset(240.8, 0.5, 1_000_000, 1_005_250);
+  const secondClient = radio.synchronizedRadioStartOffset(240.8, 0.5, 1_000_000, 1_005_250);
+  assert.equal(firstClient, 125.25);
+  assert.equal(secondClient, firstClient);
+  assert.equal(radio.synchronizedRadioStartOffset(Number.NaN, 0.5, 1_000_000, 1_005_250), 0);
+  assert.equal(radio.synchronizedRadioStartOffset(0.8, 0.5, 1_000_000, 1_005_250), 0);
+});
+
+test("leaving and reconnecting creates a new shared playback session", () => {
+  const data = radioData({
+    id: "music-station",
+    enabled: true,
+    frequency: 104.7,
+    audioUrl: "worlds/dominion/audio/music-station.mp3"
+  });
+  const first = radio.syncRadioPlaybackSession(data, () => 0.25, 1_000_000);
+  const retained = radio.syncRadioPlaybackSession(data, () => 0.75, 1_010_000);
+  assert.equal(retained.id, first.id);
+  assert.equal(retained.position, 0.25);
+
+  data.radio.frequency = 80;
+  radio.syncRadioPlaybackSession(data, () => 0.5, 1_020_000);
+  assert.equal(data.radio.playbackSession.id, "");
+
+  data.radio.frequency = 104.7;
+  const reconnected = radio.syncRadioPlaybackSession(data, () => 0.75, 1_030_000);
+  assert.notEqual(reconnected.id, first.id);
+  assert.equal(reconnected.position, 0.75);
+  assert.equal(reconnected.startedAt, 1_030_000);
 });
 
 test("open broadcasts reveal their full transmission without a lock roll", () => {
